@@ -1,0 +1,65 @@
+name: impedance
+ctrl_freq: 1000
+env_mode: sim_real_time
+
+# Pinocchio model: [arm(7), finger1, finger2]. Only the arm is commanded.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+mesh_path:
+  path_1: assets/scene/franka_fr3/urdf
+
+num_joints: 9
+num_arm_joints: 7
+num_ctrl_joints: 7
+task_frame: fr3_hand_tcp
+mode: joint  # start in joint impedance; press `t` for SE(3) task
+
+# Nominal configuration (task nominal = FK(task_frame, default_q)).
+default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+
+# Joint-space impedance: τ = Kq (q_nom − q) − Dq q̇.
+# libfranka's joint-impedance example gains (safe on the real FR3).
+# Fingers 0: they belong to the gripper API.
+kq: [600, 600, 600, 600, 250, 150, 50, 0, 0]
+dq: [50, 50, 50, 20, 20, 20, 10, 0, 0]
+kq_scale: 1.0
+dq_scale: 1.0
+
+# SE(3) task impedance at the TCP (body frame, Pinocchio LOCAL):
+#   ξ = log(T^{-1} T_nom)^∨ ∈ ℝ⁶  (ν, ω)
+#   F = K ξ − D V_b,  τ = J_b^⊤ F
+# K = diag(kt_trans I₃, kt_rot I₃), same pattern for D.
+# libfranka's cartesian_impedance_control example: 150 N/m, 10 Nm/rad,
+# damping 2*sqrt(K).
+kt_trans: 150.0
+kt_rot: 10.0
+dt_trans: 24.5
+dt_rot: 6.3
+kt_trans_scale: 1.0
+kt_rot_scale: 1.0
+dt_trans_scale: 1.0
+dt_rot_scale: 1.0
+
+# Gravity: the FR3 (and the sim) cancels it; the controller must not.
+plant_gravity_comp: true
+status_publish_stride: 20
+
+dict_joints:
+  arm:
+    joint_meas_channel: franka_arm_joint_meas
+    list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
+  gripper:
+    joint_meas_channel: franka_gripper_joint_meas
+    list_joint_idx: [7, 8]
+
+sub_manager:
+  name: franka
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gripper_joint_meas_channel: franka_gripper_joint_meas
+  gains_cmd_channel: franka_imp_gains_cmd
+  gains_cmd_type: imp
+
+pub_manager:
+  name: joint_ctrl_imp
+  ctrl_channel: franka_arm_joint_ctrl
+  gripper_cmd_channel: franka_gripper_cmd
+  status_channel: franka_imp_status

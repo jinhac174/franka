@@ -1,0 +1,396 @@
+"""Real Franka Research 3 + Franka Hand through panda-py.
+
+Same LCM contract as the simulator (``SimFrankaFR3``), so every controller runs
+unchanged on the robot (with ``env_mode: real``):
+
+* in : ``joint_ctrl_t`` (7 arm joints) -> ``tau = kp (q_des - q) + kd (qd_des - qd) + tau_ff``
+       ``gripper_cmd_t``               -> move / grasp / stop / homing
+* out: ``joint_meas_t`` arm (q, dq, tau_J), ``joint_meas_t`` fingers (width / 2
+       each), ``gripper_state_t``
+
+The FR3 compensates gravity itself in torque control, exactly like the sim
+with ``gravity_comp: true``: the commanded torque goes on top of it.
+
+panda-py runs libfranka's 1 kHz torque loop in C++ (``AppliedTorque``) and
+always applies the latest torque this process set (zero-order hold). This
+process only has to keep up approximately.
+
+Safety layer (on top of the robot's own reflexes):
+
+* ``max_joint_error``: ``q_des`` is clamped to ``q +/- max_joint_error`` so a
+  controller that jumps its set-point far away (e.g. tutorial 09, key 3) only
+  produces a bounded spring force.
+* torque saturation (FR3 limits) and a torque-rate limit (``tau_rate_max``,
+  Nm/s): no torque steps, which libfranka would reject (discontinuity reflex)
+  and which jerk the arm.
+* ``ctrl_timeout``: without fresh commands (controller stopped / crashed / not
+  started yet, or sending NaN / inf) the arm holds where it is with a soft PD.
+* ``max_joint_vel``: above it the arm switches to hold and stays there until
+  the controller is restarted (key ``h`` releases).
+
+Keys (hardware terminal): ``q`` quit, ``h`` clear a velocity stop,
+``r`` recover from a robot error (reflex) and restart torque control.
+"""
+
+from __future__ import annotations
+
+import copy
+import queue
+import threading
+import time
+
+import numpy as np
+from omegaconf import DictConfig
+
+from data_type.basic_types.GripperCmdData import GripperCmdData
+from data_type.basic_types.GripperStateData import GripperStateData
+from data_type.basic_types.JointCtrlData import JointCtrlData
+from data_type.basic_types.JointMeasData import JointMeasData
+from robot_platform.hardware.BaseHardwarePlatform import BaseHardwarePlatform
+
+N = 7
+FR3_TAU_MAX = np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
+FR3_DQ_MAX = np.array([2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26])
+
+
+# ---------------------------------------------------------------------------
+# Backends
+# ---------------------------------------------------------------------------
+class PandaPyBackend:
+    """The real robot. Needs a panda-py build for your robot's libfranka
+    version (the PyPI wheel bundles libfranka 0.9.2 = Panda only; FR3 wheels
+    are on the panda-py GitHub releases page)."""
+
+    def __init__(self, hostname: str):
+        import panda_py
+        from panda_py import controllers, libfranka
+
+        self._panda_py, self._controllers = panda_py, controllers
+        self._panda = panda_py.Panda(hostname)
+        # Two gripper connections: one runs the blocking actions, the other
+        # reads the state (and can stop an action) meanwhile.
+        self._gripper_cmd = libfranka.Gripper(hostname)
+        self._gripper_read = libfranka.Gripper(hostname)
+        self._ctrl = None
+
+    def start_torque(self):
+        # No extra damping / filtering inside panda-py: our command already has it.
+        self._ctrl = self._controllers.AppliedTorque(damping=np.zeros(N), filter_coeff=1.0)
+        self._panda.start_controller(self._ctrl)
+
+    def stop_torque(self):
+        self._panda.stop_controller()
+
+    def recover(self):
+        self._panda.recover()
+
+    def move_to_start(self):
+        self._panda.move_to_start()
+
+    def state(self):
+        s = self._panda.get_state()
+        return np.array(s.q), np.array(s.dq), np.array(s.tau_J)
+
+    def set_torque(self, tau):
+        self._ctrl.set_control(np.asarray(tau, dtype=np.float64))
+
+    def gripper_action(self, mode, width, speed, force, eps_in, eps_out) -> bool:
+        g = self._gripper_cmd
+        if mode == GripperCmdData.MOVE:
+            return g.move(width, speed)
+        if mode == GripperCmdData.GRASP:
+            return g.grasp(width, speed, force, eps_in, eps_out)
+        if mode == GripperCmdData.HOMING:
+            return g.homing()
+        return True
+
+    def gripper_stop(self) -> bool:
+        return self._gripper_read.stop()
+
+    def gripper_state(self):
+        s = self._gripper_read.read_once()
+        return s.width, s.max_width, s.is_grasped
+
+
+class FakeBackend:
+    """No robot: a crude 7-joint plant (gravity already compensated, like the
+    FR3) and an instant-ish gripper. For testing this process and the safety
+    layer on a machine without a robot."""
+
+    def __init__(self, q0=None):
+        self._q = np.array(q0 if q0 is not None else [0, -np.pi / 4, 0, -3 * np.pi / 4, 0, np.pi / 2, np.pi / 4], dtype=float)
+        self._dq = np.zeros(N)
+        self._tau = np.zeros(N)
+        self._inertia = np.array([0.76, 1.83, 1.22, 1.2, 0.12, 0.13, 0.08])
+        self._t = time.time()
+        self._width, self._grasped = 0.08, False
+        self._lock = threading.Lock()
+
+    def start_torque(self):
+        self._t = time.time()
+
+    def stop_torque(self):
+        self._tau[:] = 0.0
+
+    def recover(self):
+        pass
+
+    def move_to_start(self):
+        pass
+
+    def _integrate(self):
+        t = time.time()
+        dt = min(t - self._t, 0.01)
+        self._t = t
+        ddq = (self._tau - 0.5 * self._dq) / self._inertia
+        self._dq += ddq * dt
+        self._q += self._dq * dt
+
+    def state(self):
+        with self._lock:
+            self._integrate()
+            return self._q.copy(), self._dq.copy(), self._tau.copy()
+
+    def set_torque(self, tau):
+        with self._lock:
+            self._integrate()
+            self._tau = np.asarray(tau, dtype=float).copy()
+
+    def gripper_action(self, mode, width, speed, force, eps_in, eps_out) -> bool:
+        target = 0.08 if mode == GripperCmdData.HOMING else float(width)
+        if mode == GripperCmdData.GRASP:
+            target = 0.0  # nothing in the fake hand
+        time.sleep(abs(self._width - target) / max(speed, 1e-3))
+        self._width = target
+        self._grasped = False
+        return mode != GripperCmdData.GRASP or eps_in >= width
+
+    def gripper_stop(self) -> bool:
+        return True
+
+    def gripper_state(self):
+        return self._width, 0.08, self._grasped
+
+
+# ---------------------------------------------------------------------------
+class HardwareFrankaFR3(BaseHardwarePlatform):
+    def __init__(self, config: DictConfig, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        hw = config["robot"]
+        self._backend_name = str(hw.get("backend", "pandapy"))
+        self._hostname = str(hw.get("hostname", ""))
+        self._move_to_start = bool(hw.get("move_to_start", False))
+
+        s = config["safety"]
+        self._tau_max = np.minimum(np.asarray(s.get("tau_max", FR3_TAU_MAX), dtype=float), FR3_TAU_MAX)
+        self._tau_rate_max = float(s.get("tau_rate_max", 1000.0))
+        self._max_joint_error = float(s.get("max_joint_error", 0.1))
+        self._dq_stop = np.asarray(s.get("max_joint_vel", 0.9 * FR3_DQ_MAX), dtype=float)
+        self._ctrl_timeout = float(s.get("ctrl_timeout", 0.1))
+        self._hold_kp = np.asarray(s.get("hold_kp", [300, 300, 300, 300, 125, 75, 25]), dtype=float)
+        self._hold_kd = np.asarray(s.get("hold_kd", [35, 35, 35, 15, 15, 15, 7]), dtype=float)
+
+        pm = config["pub_manager"]
+        self._arm_ch = pm["arm_joint_meas_channel"]
+        self._finger_ch = pm["gripper_joint_meas_channel"]
+        self._gstate_ch = pm.get("gripper_state_channel", "")
+        self._gripper_cmd_ch = config["sub_manager"].get("gripper_cmd_channel", "")
+        self._gripper_rate = float(config.get("gripper_state_freq", 30.0))
+
+        self._backend = None
+        self._gripper_cmd_que = None
+        self._last_cmd: JointCtrlData | None = None
+        self._last_cmd_t = 0.0
+        self._hold_q = None
+        self._vel_stopped = False
+        self._error = False
+        self._tau_prev = np.zeros(N)
+        self._last_step_t = 0.0
+        self._arm_meas = JointMeasData(num_joints=N)
+
+        self._gripper_actions: queue.Queue = queue.Queue()
+        self._gripper_busy = False
+        self._gripper_last = (-1, True)
+        self._gripper_done_seq = -1
+        self._stop_event = threading.Event()
+        self._threads = []
+
+    # ------------------------------------------------------------ wiring
+    def set_sub_que_dict(self, sub_data_queue_dict):
+        self.ctrl_sub_que = sub_data_queue_dict["ctrl_sub_que"]
+        if self._gripper_cmd_ch:
+            self._gripper_cmd_que = sub_data_queue_dict["intr_sub_que_dict"].get(self._gripper_cmd_ch)
+
+    def set_pub_que_dict(self, pub_data_queue_dict):
+        self.intr_pub_que_dict = pub_data_queue_dict["intr_pub_que_dict"]
+        self.time_pub_que = pub_data_queue_dict.get("time_pub_que")
+
+    # ------------------------------------------------------------ lifecycle
+    def initialize(self):
+        if self._backend_name == "fake":
+            print("[FR3] FAKE backend: no robot connected.")
+            self._backend = FakeBackend()
+        else:
+            print(f"[FR3] Connecting to {self._hostname} ...")
+            self._backend = PandaPyBackend(self._hostname)
+        if self._move_to_start:
+            print("[FR3] Moving to the start pose ...")
+            self._backend.move_to_start()
+        q, _, _ = self._backend.state()
+        self._hold_q = q.copy()
+        self._tau_prev = np.zeros(N)
+        self._backend.start_torque()
+        for target in (self._gripper_action_loop, self._gripper_state_loop):
+            th = threading.Thread(target=target, daemon=True)
+            th.start()
+            self._threads.append(th)
+        self._hardware_ready = True
+        print("[FR3] Torque control running. Holding until a controller sends commands. "
+              "Keys: q quit, h clear velocity stop, r recover from a robot error.")
+
+    def shutdown(self):
+        if self._stop_event.is_set():
+            return  # already shut down
+        self._stop_event.set()
+        if self._backend is not None:
+            try:
+                self._backend.stop_torque()
+            except Exception as e:  # noqa: BLE001 - shutting down anyway
+                print(f"[FR3] stop_torque: {e}")
+        print("[FR3] Shut down.")
+
+    def estop(self):
+        self.shutdown()
+
+    def _handle_key(self, key):
+        if key == "q":
+            self._finished = True
+            self.shutdown()
+        elif key == "h":
+            if self._vel_stopped:
+                print("[FR3] Velocity stop cleared: following commands again.")
+            self._vel_stopped = False
+        elif key == "r":
+            self._recover()
+
+    def _recover(self):
+        print("[FR3] Recovering from robot error ...")
+        try:
+            self._backend.recover()
+            q, _, _ = self._backend.state()
+            self._hold_q, self._tau_prev = q.copy(), np.zeros(N)
+            self._backend.start_torque()
+            self._error = False
+            print("[FR3] Recovered; holding.")
+        except Exception as e:  # noqa: BLE001 - report and stay in error
+            print(f"[FR3] Recovery failed: {e}")
+
+    # ------------------------------------------------------------ 1 kHz-ish step
+    def _step(self):
+        now = time.time()
+        if now - self._last_step_t < self._update_dt or self._error:
+            return
+        self._last_step_t = now
+        try:
+            q, dq, tau_J = self._backend.state()
+        except Exception as e:  # noqa: BLE001 - libfranka reflexes surface here
+            return self._on_error(e)
+
+        cmd = None
+        while self.ctrl_sub_que is not None and not self.ctrl_sub_que.empty():
+            cmd = self.ctrl_sub_que.get_nowait()
+        if isinstance(cmd, JointCtrlData) and cmd.get_valid() is not False:
+            if all(np.all(np.isfinite(x)) for x in cmd.get_data()[1:]):
+                self._last_cmd, self._last_cmd_t = cmd, now
+            else:  # NaN / inf would pass np.clip: drop it (-> timeout hold)
+                print("[FR3] Non-finite command ignored.")
+
+        if np.any(np.abs(dq) > self._dq_stop) and not self._vel_stopped:
+            self._vel_stopped = True
+            self._hold_q = q.copy()
+            print(f"[FR3] Joint velocity limit exceeded ({np.round(np.abs(dq), 2)}): "
+                  "holding. Press h to resume commands.")
+
+        fresh = self._last_cmd is not None and now - self._last_cmd_t <= self._ctrl_timeout
+        if fresh and not self._vel_stopped:
+            _, q_des, qd_des, tau_ff, kp, kd = self._last_cmd.get_data()
+            q_des = np.clip(q_des, q - self._max_joint_error, q + self._max_joint_error)
+            tau = kp * (q_des - q) + kd * (qd_des - dq) + tau_ff
+            self._hold_q = q.copy()
+        else:
+            # No (fresh) command: hold the last commanded / measured pose.
+            tau = self._hold_kp * (self._hold_q - q) - self._hold_kd * dq
+
+        tau = np.clip(tau, -self._tau_max, self._tau_max)
+        step = self._tau_rate_max * self._update_dt
+        tau = self._tau_prev + np.clip(tau - self._tau_prev, -step, step)
+        self._tau_prev = tau
+        try:
+            self._backend.set_torque(tau)
+        except Exception as e:  # noqa: BLE001
+            return self._on_error(e)
+
+        self._arm_meas.set_data(now, q, dq, tau_J)
+        que = self.intr_pub_que_dict.get(self._arm_ch)
+        if que is not None:
+            que.put(copy.deepcopy(self._arm_meas))
+        self._dispatch_gripper_cmds()
+
+    def _on_error(self, e):
+        self._error = True
+        print(f"[FR3] Robot error: {e}\n[FR3] Torque control stopped. Fix the cause, then press r.")
+
+    # ------------------------------------------------------------ gripper
+    def _dispatch_gripper_cmds(self):
+        """Hand new gripper commands (by seq) to the action thread; STOP is
+        executed right away so it can interrupt a running move / grasp."""
+        if self._gripper_cmd_que is None:
+            return
+        while not self._gripper_cmd_que.empty():
+            cmd = self._gripper_cmd_que.get_nowait()
+            if not isinstance(cmd, GripperCmdData) or cmd.seq == self._gripper_done_seq:
+                continue
+            self._gripper_done_seq = cmd.seq
+            if cmd.mode == GripperCmdData.STOP:
+                ok = self._backend.gripper_stop()
+                self._gripper_last = (cmd.seq, bool(ok))
+            else:
+                self._gripper_actions.put(cmd)
+
+    def _gripper_action_loop(self):
+        while not self._stop_event.is_set():
+            try:
+                cmd = self._gripper_actions.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            self._gripper_busy = True
+            try:
+                ok = self._backend.gripper_action(
+                    cmd.mode, cmd.width, cmd.speed, cmd.force, cmd.epsilon_inner, cmd.epsilon_outer
+                )
+            except Exception as e:  # noqa: BLE001 - a failed action is reported, not fatal
+                print(f"[FR3] Gripper action failed: {e}")
+                ok = False
+            self._gripper_last = (cmd.seq, bool(ok))
+            self._gripper_busy = False
+
+    def _gripper_state_loop(self):
+        finger = JointMeasData(num_joints=2)
+        state = GripperStateData()
+        while not self._stop_event.is_set():
+            t0 = time.time()
+            try:
+                width, max_width, grasped = self._backend.gripper_state()
+            except Exception as e:  # noqa: BLE001
+                print(f"[FR3] Gripper read failed: {e}")
+                time.sleep(1.0)
+                continue
+            half = 0.5 * width
+            finger.set_data(t0, np.array([half, half]), np.zeros(2), np.zeros(2))
+            seq, ok = self._gripper_last
+            state.set_data(t0, width, max_width, grasped, self._gripper_busy, seq, ok)
+            for ch, data in ((self._finger_ch, finger), (self._gstate_ch, state)):
+                que = self.intr_pub_que_dict.get(ch) if ch else None
+                if que is not None:
+                    que.put(copy.deepcopy(data))
+            time.sleep(max(0.0, 1.0 / self._gripper_rate - (time.time() - t0)))

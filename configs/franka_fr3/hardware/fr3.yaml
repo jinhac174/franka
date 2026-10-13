@@ -1,0 +1,41 @@
+# Real FR3 + Franka Hand (run_hardware.py). Publishes / subscribes the same
+# channels as configs/franka_fr3/env/*.yaml, so controllers run unchanged
+# (start them with --env_mode real).
+name: franka_fr3
+
+hardware_freq: 1000        # Hz this process updates the torque (panda-py holds it at 1 kHz)
+gripper_state_freq: 30     # Hz gripper state / finger joints are published
+
+robot:
+  backend: pandapy         # pandapy = the robot; fake = no robot (testing this process)
+  hostname: 172.16.0.2     # FR3 control box (FCI) IP: set yours
+  move_to_start: false     # true: libfranka's move_to_start() before torque control
+
+safety:
+  # Torque limits (Nm), at most the FR3 limits [87 x4, 12 x3].
+  tau_max: [87, 87, 87, 87, 12, 12, 12]
+  # Max torque change (Nm/s). libfranka itself rejects torque discontinuities.
+  tau_rate_max: 1000.0
+  # q_des is clamped to q +/- this (rad): a controller that jumps its set-point
+  # far away only gets a bounded spring force.
+  max_joint_error: 0.1
+  # Above these joint speeds (rad/s) the arm holds until you press h.
+  max_joint_vel: [2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0]
+  # No command for this long (s): hold the current pose with hold_kp / hold_kd.
+  ctrl_timeout: 0.1
+  hold_kp: [300, 300, 300, 300, 125, 75, 25]
+  hold_kd: [35, 35, 35, 15, 15, 15, 7]
+
+sub_manager:
+  name: franka
+  ctrl_channel: franka_arm_joint_ctrl
+  gripper_cmd_channel: franka_gripper_cmd
+  num_joints: 7
+  max_sub_freq: 2000
+
+pub_manager:
+  name: franka
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gripper_joint_meas_channel: franka_gripper_joint_meas
+  gripper_state_channel: franka_gripper_state
+  max_pub_freq: 2000

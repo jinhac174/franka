@@ -1,0 +1,15 @@
+name: franka_fr3
+vis_freq: 30
+
+franka_fr3:
+  # Channels the sim env (SimFrankaFR3) and the hardware process publish on,
+  # so this config reads from sim or hardware without changes.
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gripper_joint_meas_channel: franka_gripper_joint_meas
+  num_arm_joints: 7
+  num_finger_joints: 2
+
+  # FR3 + Franka Hand URDF (relative mesh paths, loads directly).
+  urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+  # Optional yourdfpy mesh_dir override; leave blank to use the URDF's own paths.
+  mesh_dir: ""

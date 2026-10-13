@@ -1,0 +1,159 @@
+name: ik_reach
+ctrl_freq: 1000
+env_mode: sim_real_time
+
+# Pinocchio model: [arm(7), finger1, finger2]. Only the arm is commanded.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+mesh_path:
+  path_1: assets/scene/franka_fr3/urdf
+
+num_joints: 9
+num_arm_joints: 7
+num_ctrl_joints: 7
+default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+
+# --- Pose IK sample (key 1): TCP SE(3) ---
+task_frame: fr3_hand_tcp
+ik_tol: 1.0e-4
+ik_max_iters: 200
+ik_damping: 1.0e-4
+ik_step: 0.5
+# World-frame TCP position box (m). Ready pose TCP = [0.307, 0.0, 0.487].
+pose_pos_min: [0.30, -0.25, 0.15]
+pose_pos_max: [0.60, 0.25, 0.50]
+# Randomize orientation about the current TCP orientation: ||ω|| ≤ this (rad).
+pose_rot_noise_rad: 0.45
+# No hand joints to sample: the gripper fingers keep their measured width.
+hand_sample_joint_idx: []
+sample_seed: 0  # 0 => nondeterministic
+
+# PD tracking / hold: libfranka's joint-impedance example gains, the standard
+# safe starting point on the real FR3. Fingers 0 (not commanded).
+kp: [600, 600, 600, 600, 250, 150, 50, 0, 0]
+kd: [50, 50, 50, 20, 20, 20, 10, 0, 0]
+# Below the FR3 limits (2.62 rad/s for joints 1-4, 4.18-5.26 for 5-7).
+joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5, 0, 0]
+
+# Live gain / friction scales (Viser sliders override via LCM).
+kp_scale: 1.0
+kd_scale: 1.0
+fjc_scale: 1.0
+arm_damping: 0.5  # soft viscous damping in grav mode (arm only)
+
+# Gravity: the FR3 (and the sim) cancels it; the controller must not.
+plant_gravity_comp: true
+# Coulomb friction FF: tau += Fjc * sat(qd_des / friction_phi).
+# Fjc = the FR3 joint frictionloss in the MJCF; re-identify on hardware.
+do_friction_comp: true
+friction_phi: 0.01
+Fjc: [1.137, 1.137, 1.137, 1.137, 0.763, 0.44, 0.248, 0.0, 0.0]
+# Downsample status for Viser (~50 Hz at ctrl_freq=1000).
+status_publish_stride: 20
+
+# Collision (env + self). Clearance must be >= safty_dist_thr.
+safty_dist_thr: 0.02
+col_link_names: ["fr3_link0", "fr3_link1", "fr3_link2", "fr3_link3", "fr3_link4",
+                 "fr3_link5", "fr3_link5__2", "fr3_link6", "fr3_link7", "fr3_link7__2",
+                 "fr3_hand", "fr3_hand__2"]
+obs_names: ["floor", "wall_back", "wall_left"]
+col_pairs:
+  - ["fr3_link2", "wall_back"]
+  - ["fr3_link2", "wall_left"]
+  - ["fr3_link3", "wall_back"]
+  - ["fr3_link3", "wall_left"]
+  - ["fr3_link3", "floor"]
+  - ["fr3_link4", "wall_back"]
+  - ["fr3_link4", "wall_left"]
+  - ["fr3_link4", "floor"]
+  - ["fr3_link5", "wall_back"]
+  - ["fr3_link5", "wall_left"]
+  - ["fr3_link5", "floor"]
+  - ["fr3_link5__2", "wall_back"]
+  - ["fr3_link5__2", "wall_left"]
+  - ["fr3_link5__2", "floor"]
+  - ["fr3_link6", "wall_back"]
+  - ["fr3_link6", "wall_left"]
+  - ["fr3_link6", "floor"]
+  - ["fr3_link7", "wall_back"]
+  - ["fr3_link7", "wall_left"]
+  - ["fr3_link7", "floor"]
+  - ["fr3_link7__2", "wall_back"]
+  - ["fr3_link7__2", "wall_left"]
+  - ["fr3_link7__2", "floor"]
+  - ["fr3_hand", "wall_back"]
+  - ["fr3_hand", "wall_left"]
+  - ["fr3_hand", "floor"]
+  - ["fr3_hand__2", "wall_back"]
+  - ["fr3_hand__2", "wall_left"]
+  - ["fr3_hand__2", "floor"]
+# Self-collision: the pairs Franka's SRDF leaves enabled.
+self_col_pairs:
+  - ["fr3_link5", "fr3_link0"]
+  - ["fr3_link5__2", "fr3_link0"]
+  - ["fr3_link6", "fr3_link0"]
+  - ["fr3_link7", "fr3_link0"]
+  - ["fr3_link7__2", "fr3_link0"]
+  - ["fr3_hand__2", "fr3_link0"]
+  - ["fr3_hand", "fr3_link0"]
+  - ["fr3_link5", "fr3_link1"]
+  - ["fr3_link5__2", "fr3_link1"]
+  - ["fr3_link6", "fr3_link1"]
+  - ["fr3_link7", "fr3_link1"]
+  - ["fr3_link7__2", "fr3_link1"]
+  - ["fr3_hand__2", "fr3_link1"]
+  - ["fr3_hand", "fr3_link1"]
+  - ["fr3_link5", "fr3_link2"]
+  - ["fr3_link5__2", "fr3_link2"]
+  - ["fr3_link7", "fr3_link2"]
+  - ["fr3_link7__2", "fr3_link2"]
+  - ["fr3_hand__2", "fr3_link2"]
+  - ["fr3_hand", "fr3_link2"]
+  - ["fr3_hand__2", "fr3_link5"]
+  - ["fr3_hand", "fr3_link5"]
+  - ["fr3_hand__2", "fr3_link5__2"]
+  - ["fr3_hand", "fr3_link5__2"]
+
+# Reachability / collision reject loop.
+sample_joint_idx: [0, 1, 2, 3, 4, 5, 6]
+joint_limit_margin: 0.05
+sample_max_tries: 500
+
+# Planning (after a successful IK): RRT-Connect → B-spline → min-jerk.
+seg_check_steps: 20
+rrt_step_size: 0.3
+rrt_max_iters: 2500
+rrt_goal_bias: 0.05
+rrt_shortcut_iters: 100
+bspline_samples: 80
+traj_dt: 0.01
+# Downsample planned traj for LCM (keep every N-th sample + final).
+traj_publish_stride: 5
+# null => auto from path length / joint velocity limits.
+traj_duration: null
+traj_duration_scale: 1.6  # slightly slower than plain P2P
+
+dict_joints:
+  arm:
+    joint_meas_channel: franka_arm_joint_meas
+    list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
+  gripper:
+    joint_meas_channel: franka_gripper_joint_meas
+    list_joint_idx: [7, 8]
+
+sub_manager:
+  name: franka
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gripper_joint_meas_channel: franka_gripper_joint_meas
+  static_col_info_channel: franka_static_col_info
+  robot_col_info_channel: franka_robot_col_info
+  gains_cmd_channel: franka_p2p_gains_cmd
+  gains_cmd_type: p2p
+
+pub_manager:
+  name: joint_ctrl_traj
+  ctrl_channel: franka_arm_joint_ctrl
+  gripper_cmd_channel: franka_gripper_cmd
+  target_joint_channel: franka_p2p_target_joint
+  traj_channel: franka_p2p_joint_traj
+  status_channel: franka_p2p_status
+  palm_pose_channel: franka_ik_reach_pose

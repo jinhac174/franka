@@ -1,0 +1,13 @@
+# External repos (FoundationPose, sam2): clone them per tutorial 13
+third_party
+
+# Python / tool caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# MuJoCo runtime log
+MUJOCO_LOG.TXT
+
+# Editor settings (machine-specific paths)
+.vscode/

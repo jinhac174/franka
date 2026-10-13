@@ -1,0 +1,227 @@
+name: force_aware_grasp
+ctrl_freq: 1000
+env_mode: sim_real_time
+
+# Pinocchio model: [arm(7), finger1, finger2]. Only the arm is commanded.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+mesh_path:
+  path_1: assets/scene/franka_fr3/urdf
+
+num_joints: 9
+num_ctrl_joints: 7
+# Home for key "h": Franka ready pose, gripper open.
+default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+
+# The object to grasp (same file as the env's object_config): mesh for grasp
+# sampling, mass, and the upright orientation.
+object_config: configs/objects/mustard_bottle.yaml
+
+grasp:
+  # Contact model (same mu / gamma as the finger pads in fr3_hand_robot.xml).
+  mu: 0.8
+  gamma: 0.008
+  # Candidate generation (startup)
+  num_samples: 3000
+  num_approach: 12
+  seed: 0
+  open_margin: 0.02        # open this much wider than the object before closing
+  # Online filters
+  min_downward: 0.5        # approach axis . (0,0,-1) >= this (within 60 deg of vertical)
+  table_z: 0.0
+  table_clearance: 0.04    # open fingers stay this far above the table
+  max_reach: 0.75          # TCP horizontal distance from the base (m)
+  # Scoring (lower is better): force / f_ref + w_rot * rot + w_pos * dist
+  w_force: 1.0
+  f_ref: 10.0
+  w_rot: 1.0
+  w_pos: 2.0
+  # Sticky selection: switch only if another grasp beats the current one by
+  # switch_margin for switch_ticks consecutive plans.
+  switch_margin: 0.3
+  switch_ticks: 10
+  # Motion
+  pregrasp_dist: 0.10      # pre-grasp = grasp backed off along the approach axis
+  # Reach: IK to the pre-grasp, then a joint-space velocity field to it.
+  reach_joint_gain: 2.0    # 1/s
+  reach_joint_tol: 0.01    # rad, then switch to the Cartesian approach
+  ik_limit_margin: 0.05    # rad, keep IK solutions this far inside the joint limits
+  ik_tol: 0.001            # ||log(T^-1 T_des)||: ~1 mm / 1 mrad is plenty for a pre-grasp
+  ik_max_iters: 500
+  ik_min_sigma: 0.08       # reject IK solutions near a singularity (ready pose: 0.22)
+  # Approach / lift: 6-D pose velocity field.
+  lift_height: 0.15
+  pos_gain: 3.0
+  rot_gain: 2.0
+  v_reach: 0.15            # m/s
+  v_approach: 0.05
+  w_max: 0.8               # rad/s
+  rot_weight: 0.5          # QP weight of rotation rows vs translation rows
+  pregrasp_pos_tol: 0.01
+  pregrasp_rot_tol: 0.05
+  grasp_pos_tol: 0.004
+  grasp_rot_tol: 0.03
+  object_moved_tol: 0.02   # restart the approach if the object moves this much
+  approach_timeout: 15.0   # s; a blocked approach fails over to another grasp
+  actual_pos_tol: 0.008    # the *measured* TCP must also be this close before closing
+  stall_time: 3.0          # s without progress (position OR rotation) during approach / lift
+  stall_dist: 0.005
+  stall_angle: 0.05
+  # Gripper
+  grasp_force: 30.0        # N (tutorial 10: fixed)
+  grasp_speed: 0.1
+  grasp_eps: 0.01
+  gripper_timeout: 3.0
+
+# Tutorial 12: weigh, then squeeze (grasp.grasp_force above is not used).
+force:
+  # First grasp, only for the small test lift. It must hold reliably: the
+  # model can under-predict tilted grasps ~2.5x (tutorial 11).
+  probe_force: 30.0        # N
+  min_mass: 0.05           # kg; a lighter reading means the object slipped
+  # High enough that a tall object hanging slightly tilted in the fingers
+  # no longer touches the table (else the table carries part of the weight).
+  test_lift_height: 0.06   # m
+  settle_time: 0.5         # s at rest before weighing
+  weigh_time: 0.5          # s of torque samples averaged
+  # Grip force = safety_factor * model force for the estimated mass. Tutorial 11
+  # found the model can under-predict tilted grasps by up to ~2.5x.
+  safety_factor: 2.5
+  f_min: 5.0
+  f_max: 70.0              # Franka Hand continuous force
+  escalation: 1.5          # after losing the object, probe this much harder
+  load_feedforward: true   # add J^T w_load so the arm does not sag
+
+# Arm reference tracking: q_ref integrates the planned joint velocity and is
+# tracked with libfranka's joint-impedance gains, so a held object does not
+# make the arm sag (velocity damping alone cannot hold a load).
+hold_kp: [600, 600, 600, 600, 250, 150, 50]
+hold_kd: [50, 50, 50, 20, 20, 20, 10]
+max_ref_err: 0.05
+# Hold (stop integrating) if the newest plan is older than this (s): a
+# safety net for a planner that died, not for ordinary jitter (the planner
+# shares Python's GIL with the 1 kHz loop, so plans arrive irregularly).
+max_plan_age: 0.2
+
+# Task-space point: the gripper's tool centre point (between the fingertips).
+task_link: fr3_hand_tcp
+task_point_local: [0.0, 0.0, 0.0]
+
+# Contracting field: v* = vel_gain*(p_des-p) - cart_damping*p_dot, clipped.
+vel_gain: 3.0
+cart_damping: 0.1
+v_max: 0.15
+pos_tol: 0.005
+# Control loop runs at ctrl_freq; FCL+OSQP run on a side thread at plan_freq.
+# Keeping plan << ctrl avoids missed ticks / burst catch-up freak-outs.
+plan_freq: 100
+qd_filter: 0.25          # low-pass on qd_des in the control thread (1 = raw)
+# Small for a 6-D pose task: the regularisation must stay well below the
+# squared smallest singular value of the (weighted) TCP Jacobian, or motion
+# in that direction is suppressed and the TCP creeps near awkward poses.
+qp_reg: 0.001
+plan_horizon: 0.05
+# When d < d_safe, cap the demanded gap-opening speed (m/s) so the QP stays feasible.
+col_sep_rate_max: 0.25
+use_position_pd: false   # velocity tracking with velocity_control_D_gain
+
+# Joint-space home (key "h")
+joint_vel_gain: 1.0
+joint_damping: 0.5
+joint_pos_tol: 0.02
+
+# Keyboard nudging of p_des (m per keypress).
+target_step: 0.01
+target_step_min: 0.002
+target_step_max: 0.05
+
+# ---------------------------------------------------------------------------
+# Gains
+#   kp = default_kd^2 / (4 * mean_mass_matrix_diag)   # critical damping
+#   require M - delay*kd > 0 and kd - kp*delay > 0
+# Velocity mode uses velocity_control_D_gain with kp=0.
+#
+# mean_mass_matrix_diag = diag(M(q)) from MuJoCo mj_fullM at the ready pose on
+# fr3_hand_robot.xml (rigid-body inertia + joint armature).
+# ---------------------------------------------------------------------------
+est_time_delay: 0.01
+mean_mass_matrix_diag: [0.7624, 1.829, 1.2239, 1.1964, 0.1171, 0.1262, 0.0759, 0.115, 0.115]
+default_kd: [5.0, 8.0, 4.0, 4.0, 1.0, 1.0, 0.5, 0.0, 0.0]
+velocity_control_D_gain: [5.0, 5.0, 5.0, 5.0, 2.0, 2.0, 1.0, 0.0, 0.0]
+
+# Gravity: the FR3 (and the sim) cancels it; the controller must not.
+plant_gravity_comp: true
+# Coriolis is NOT compensated by the FR3, so the controller adds C(q,qd)qd.
+do_coriolis_comp: true
+# Coulomb friction FF: OFF here. This controller tracks q_ref with a stiff
+# spring (hold_kp), which already overcomes the ~1.1 Nm joint friction with a
+# ~2 mrad error. Near a goal qd_des keeps changing sign, and a friction FF of
+# Fjc * sat(qd_des / phi) would then flip by +/-1.1 Nm: a stick-slip limit cycle.
+do_friction_comp: false
+friction_phi: 0.01
+Fjc: [1.137, 1.137, 1.137, 1.137, 0.763, 0.44, 0.248, 0.0, 0.0]
+
+# Below the FR3 limits (2.62 rad/s for joints 1-4, 4.18-5.26 for 5-7).
+# Fingers 0: they are not commanded by this controller.
+joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5, 0, 0]
+
+safty_dist_thr: 0.02
+
+col_link_names: ["fr3_link2", "fr3_link3", "fr3_link4", "fr3_link5", "fr3_link5__2",
+                 "fr3_link6", "fr3_link7", "fr3_link7__2", "fr3_hand", "fr3_hand__2"]
+obs_names: ["floor", "wall_back", "wall_left"]
+col_pairs:
+  - ["fr3_link2", "wall_back"]
+  - ["fr3_link2", "wall_left"]
+  - ["fr3_link3", "wall_back"]
+  - ["fr3_link3", "wall_left"]
+  - ["fr3_link3", "floor"]
+  - ["fr3_link4", "wall_back"]
+  - ["fr3_link4", "wall_left"]
+  - ["fr3_link4", "floor"]
+  - ["fr3_link5", "wall_back"]
+  - ["fr3_link5", "wall_left"]
+  - ["fr3_link5", "floor"]
+  - ["fr3_link5__2", "wall_back"]
+  - ["fr3_link5__2", "wall_left"]
+  - ["fr3_link5__2", "floor"]
+  - ["fr3_link6", "wall_back"]
+  - ["fr3_link6", "wall_left"]
+  - ["fr3_link6", "floor"]
+  - ["fr3_link7", "wall_back"]
+  - ["fr3_link7", "wall_left"]
+  - ["fr3_link7", "floor"]
+  - ["fr3_link7__2", "wall_back"]
+  - ["fr3_link7__2", "wall_left"]
+  - ["fr3_link7__2", "floor"]
+  - ["fr3_hand", "wall_back"]
+  - ["fr3_hand", "wall_left"]
+  - ["fr3_hand", "floor"]
+  - ["fr3_hand__2", "wall_back"]
+  - ["fr3_hand__2", "wall_left"]
+  - ["fr3_hand__2", "floor"]
+
+dict_joints:
+  arm:
+    joint_meas_channel: franka_arm_joint_meas
+    list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
+  gripper:
+    joint_meas_channel: franka_gripper_joint_meas
+    list_joint_idx: [7, 8]
+
+sub_manager:
+  name: franka
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gripper_joint_meas_channel: franka_gripper_joint_meas
+  gripper_state_channel: franka_gripper_state
+  static_col_info_channel: franka_static_col_info
+  robot_col_info_channel: franka_robot_col_info
+  object_pose_channel: franka_object_pose
+  object_physics_channel: franka_object_physics
+
+pub_manager:
+  name: joint_ctrl_grasp
+  ctrl_channel: franka_arm_joint_ctrl
+  gripper_cmd_channel: franka_gripper_cmd
+  pose_channel: franka_ik_target_pose
+  target_tcp_channel: franka_grasp_target_tcp
+  grasp_candidates_channel: franka_grasp_candidates

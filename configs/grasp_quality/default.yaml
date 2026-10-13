@@ -1,0 +1,30 @@
+# Tutorial 11: parallel-jaw grasp quality (run_grasp_quality.py).
+object_config: configs/objects/mustard_bottle.yaml
+
+# Contact model shared by the prediction and the sim (finger pads in
+# fr3_hand_robot.xml): sliding friction mu, torsional friction gamma (m).
+mu: 0.8
+gamma: 0.008
+
+# Grasp sampling
+num_samples: 3000
+num_approach: 12
+num_grasps: 10          # how many grasps to evaluate
+min_downward: 0.3       # keep approaches with z_tcp . (0,0,-1) >= this
+seed: 0
+
+# Trial
+open_margin: 0.02       # open this much wider than the object before closing
+grasp_speed: 0.1
+grasp_eps: 0.01         # grasp success window +/- (m)
+close_time: 1.0         # s, gravity off while the fingers close
+hold_time: 0.5          # s, after gravity on, and again after the lift
+lift_time: 0.5
+lift_height: 0.1
+slip_tol_mm: 5.0        # "held" = object moved less than this in the hand
+slip_tol_deg: 5.0
+
+# Bisection on the grip force
+f_min: 0.5
+f_max: 70.0             # Franka Hand continuous grasp force
+bisection_steps: 10

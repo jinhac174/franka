@@ -1,0 +1,10 @@
+# YCB 005 tomato soup can (mesh from assets/object_mesh/0715_tomato_soup_can).
+name: tomato_soup_can
+mesh_path: assets/object_mesh/0715_tomato_soup_can/mujoco_mesh.obj
+mass: 0.349           # kg (YCB)
+rgba: [0.75, 0.15, 0.1, 1.0]
+# Object-surface friction (sliding, torsional, rolling). MuJoCo uses the larger
+# of the two geoms, so contacts with the gripper pads get the pad values.
+friction: [0.5, 0.005, 0.0001]
+# Mesh frame has the can axis along x; this rotation stands it upright.
+spawn_rpy: [0.0, 1.5707963, 0.0]

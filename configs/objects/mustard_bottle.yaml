@@ -1,0 +1,8 @@
+# YCB 006 mustard bottle (mesh from assets/object_mesh/ycb_006_mustard_bottle).
+name: mustard_bottle
+mesh_path: assets/object_mesh/ycb_006_mustard_bottle/mujoco_mesh.obj
+mass: 0.603           # kg (YCB)
+rgba: [0.95, 0.8, 0.1, 1.0]
+friction: [0.5, 0.005, 0.0001]
+# Mesh frame is already upright (z up, base at z=0).
+spawn_rpy: [0.0, 0.0, 0.0]

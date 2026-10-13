@@ -1,0 +1,13 @@
+# run_pose_bridge.py: FoundationPose -> grasp controllers.
+# Input: what the FoundationPose node publishes (its pub_manager channel).
+fp_pose_channel: fp_obj_pose
+# The mesh FoundationPose loads (its mesh_file): defines the bounding-box frame.
+fp_mesh_file: assets/object_mesh/ycb_006_mustard_bottle/textured_mesh.obj
+# The grasp controllers' object (same mesh frame as fp_mesh_file).
+object_config: configs/objects/mustard_bottle.yaml
+# Output: what the grasp controllers subscribe to.
+object_pose_channel: franka_object_pose
+object_physics_channel: franka_object_physics
+# Camera extrinsics give poses in a "world" frame. If you calibrated them
+# against the robot base (tutorial 14), world = base and this stays identity.
+base_from_world: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]

@@ -1,0 +1,37 @@
+name: mujoco_col
+scene_xml_path: assets/scene/franka_fr3/scene_default.xml
+
+env_mode: sim_real_time
+vis_mode: vis_on
+
+sim_steps_per_control: 1
+sim_freq: 1000
+view_freq: 30
+
+# How often the collision geometry is (re)published (s).
+col_info_update_dt: 0.1
+
+platform:
+  name: franka_fr3
+  default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
+  default_gripper_width: 0.08
+  # Plant compensates gravity, like the real FR3.
+  gravity_comp: true
+  arm_joint_meas_freq: 1000
+  gripper_meas_freq: 100
+
+sub_manager:
+  name: franka
+  ctrl_channel: franka_arm_joint_ctrl
+  gripper_cmd_channel: franka_gripper_cmd
+  num_joints: 7
+  max_sub_freq: 2000
+
+pub_manager:
+  name: franka
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gripper_joint_meas_channel: franka_gripper_joint_meas
+  gripper_state_channel: franka_gripper_state
+  static_col_info_channel: franka_static_col_info
+  robot_col_info_channel: franka_robot_col_info
+  max_pub_freq: 2000

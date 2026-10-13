@@ -1,0 +1,7 @@
+# Collision geometry for the real robot (run_scene_info.py).
+# Describe YOUR cell in this scene: floor, wall_*, table*, obs_* geoms are
+# exported. The default scene's walls are placeholders - measure your cell.
+scene_xml_path: assets/scene/franka_fr3/scene_default.xml
+static_col_info_channel: franka_static_col_info
+robot_col_info_channel: franka_robot_col_info
+rate: 10.0   # Hz

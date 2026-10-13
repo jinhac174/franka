@@ -1,0 +1,103 @@
+name: franka_fr3
+vis_freq: 30
+
+franka_fr3:
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gripper_joint_meas_channel: franka_gripper_joint_meas
+  num_arm_joints: 7
+  num_finger_joints: 2
+
+  urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+  mesh_dir: ""
+
+  # Collision-info channels for the "Show collision geometry" overlay and the
+  # "Show collision distances" dashed lines. Subscribed off the wire so they
+  # match EXACTLY what the collision-aware controller receives.
+  robot_col_info_channel: franka_robot_col_info
+  static_col_info_channel: franka_static_col_info
+
+  # P2P overlays from MinimumJerkP2PControl.
+  target_joint_channel: franka_p2p_target_joint
+  traj_channel: franka_p2p_joint_traj
+  traj_frame: fr3_hand_tcp
+  status_channel: franka_p2p_status
+  gains_cmd_channel: franka_p2p_gains_cmd
+  # Initial Viser slider values (should match controller defaults).
+  kp_scale: 1.0
+  kd_scale: 1.0
+  fjc_scale: 1.0
+  friction_phi: 0.01
+  do_friction_comp: true
+  plot_history_s: 8.0
+
+  # IK-reach overlays: sampled TCP pose (SE(3) frame) + floating gripper
+  # preview (meshes under float_hand_link, placed so float_hand_frame sits at
+  # the sampled pose).
+  palm_pose_channel: franka_ik_reach_pose
+  palm_frame_axes_length: 0.08
+  float_hand_link: fr3_hand
+  float_hand_frame: fr3_hand_tcp
+
+  # Draw dashed nearest-point lines when FCL distance < this threshold (m).
+  # Red = robot <-> environment; orange = self-collision.
+  col_dist_thr: 0.10
+
+  # link <-> obstacle pairs (same set as col_aware_grav_comp).
+  col_pairs:
+    - ["fr3_link2", "wall_back"]
+    - ["fr3_link2", "wall_left"]
+    - ["fr3_link3", "wall_back"]
+    - ["fr3_link3", "wall_left"]
+    - ["fr3_link3", "floor"]
+    - ["fr3_link4", "wall_back"]
+    - ["fr3_link4", "wall_left"]
+    - ["fr3_link4", "floor"]
+    - ["fr3_link5", "wall_back"]
+    - ["fr3_link5", "wall_left"]
+    - ["fr3_link5", "floor"]
+    - ["fr3_link5__2", "wall_back"]
+    - ["fr3_link5__2", "wall_left"]
+    - ["fr3_link5__2", "floor"]
+    - ["fr3_link6", "wall_back"]
+    - ["fr3_link6", "wall_left"]
+    - ["fr3_link6", "floor"]
+    - ["fr3_link7", "wall_back"]
+    - ["fr3_link7", "wall_left"]
+    - ["fr3_link7", "floor"]
+    - ["fr3_link7__2", "wall_back"]
+    - ["fr3_link7__2", "wall_left"]
+    - ["fr3_link7__2", "floor"]
+    - ["fr3_hand", "wall_back"]
+    - ["fr3_hand", "wall_left"]
+    - ["fr3_hand", "floor"]
+    - ["fr3_hand__2", "wall_back"]
+    - ["fr3_hand__2", "wall_left"]
+    - ["fr3_hand__2", "floor"]
+
+  # Self-collision pairs: the ones Franka's SRDF leaves enabled (all other
+  # link pairs are adjacent or can never touch).
+  self_col_pairs:
+    - ["fr3_link5", "fr3_link0"]
+    - ["fr3_link5__2", "fr3_link0"]
+    - ["fr3_link6", "fr3_link0"]
+    - ["fr3_link7", "fr3_link0"]
+    - ["fr3_link7__2", "fr3_link0"]
+    - ["fr3_hand__2", "fr3_link0"]
+    - ["fr3_hand", "fr3_link0"]
+    - ["fr3_link5", "fr3_link1"]
+    - ["fr3_link5__2", "fr3_link1"]
+    - ["fr3_link6", "fr3_link1"]
+    - ["fr3_link7", "fr3_link1"]
+    - ["fr3_link7__2", "fr3_link1"]
+    - ["fr3_hand__2", "fr3_link1"]
+    - ["fr3_hand", "fr3_link1"]
+    - ["fr3_link5", "fr3_link2"]
+    - ["fr3_link5__2", "fr3_link2"]
+    - ["fr3_link7", "fr3_link2"]
+    - ["fr3_link7__2", "fr3_link2"]
+    - ["fr3_hand__2", "fr3_link2"]
+    - ["fr3_hand", "fr3_link2"]
+    - ["fr3_hand__2", "fr3_link5"]
+    - ["fr3_hand", "fr3_link5"]
+    - ["fr3_hand__2", "fr3_link5__2"]
+    - ["fr3_hand", "fr3_link5__2"]
