@@ -1,10 +1,10 @@
 # Running on the real FR3
 
-Everything so far ran in MuJoCo. On the robot, exactly one process changes: `run_env.py` is replaced by `run_hardware.py`, which talks to the FR3 and the Franka Hand and publishes **the same LCM channels**. Controllers, visualizer and perception run unchanged; controllers only need `--env_mode real` (they then use wall-clock time instead of the simulation clock).
+Everything so far ran in MuJoCo. On the robot, exactly one process changes: `run_env.py` is replaced by `run_hardware.py`, which talks to the FR3 (panda-py) and the Robotiq 2F-85 (Modbus over USB, as in DROID) and publishes **the same LCM channels**. Controllers, visualizer and perception run unchanged; controllers only need `--env_mode real` (they then use wall-clock time instead of the simulation clock).
 
 ```
                  sim                                   real robot
-run_env.py  (MuJoCo, SimFrankaFR3)     ->     run_hardware.py (panda-py -> FR3, Franka Hand)
+run_env.py  (MuJoCo, SimFrankaFR3)     ->     run_hardware.py (panda-py -> FR3, Modbus -> Robotiq 2F-85)
                                               run_scene_info.py (collision geometry of your cell)
 run_controller.py --config ...         ->     run_controller.py --config ... --env_mode real
 run_visualizer.py --config ...         ->     (unchanged)
@@ -19,14 +19,16 @@ Follow Franka’s documentation for these; they depend on your robot’s system 
 1. **Real-time kernel.** libfranka needs a `PREEMPT_RT` kernel for its 1 kHz loop.
 2. **libfranka version** compatible with your FR3’s system version (Franka publishes a compatibility table).
 3. **panda-py built for that libfranka version.** The PyPI wheel (`pip install panda-python`) bundles libfranka 0.9.2, which only supports the older Panda. Install the FR3 build from the panda-py GitHub releases instead (see `requirements.txt`).
-4. **Network and Desk.** Connect the workstation to the control box, unlock the joints and activate FCI in Desk. Set the gripper’s mass / inertia in Desk if you changed it: the FR3’s gravity compensation uses it.
-5. **LCM** multicast and receive buffer, as in [13](13_foundation_pose_sim.md).
+4. **Network and Desk.** Connect the workstation to the control box, unlock the joints and activate FCI in Desk. In Desk's end-effector settings, set the load to the Robotiq 2F-85: **0.925 kg, centre of mass 0.052 m along the flange's z axis** (Desk assumes a Franka Hand otherwise). The FR3's gravity compensation uses it: wrong values make the arm sag or drift up under grav comp.
+5. **Gripper.** Plug the 2F-85's USB / RS-485 adapter into this workstation (DROID plugs it into the NUC; here `run_hardware.py` drives it). Install `pyserial` and allow access to the port: `sudo usermod -aG dialout $USER`, log in again; `ls /dev/ttyUSB*` shows it. Set `gripper.port` in `fr3.yaml` if it is not `/dev/ttyUSB0`. On start, `run_hardware.py` activates it: the fingers close and open once.
+6. **Cameras (perception only).** The ZED SDK + `pyzed` on the computer the ZEDs are plugged into; put their serials in `configs/sensors/zed/droid.yaml`.
+7. **LCM** multicast and receive buffer, as in [13](13_foundation_pose_sim.md).
 
 Then set `robot.hostname` in `configs/franka_fr3/hardware/fr3.yaml` and check the machine:
 
 ```bash
-python scripts/preflight.py             # RT kernel, rtprio, panda-py / libfranka, LCM, config, ping
-python scripts/preflight.py --connect   # + connect with panda-py and read the state (no motion)
+python scripts/preflight.py             # RT kernel, rtprio, panda-py / libfranka, gripper port, LCM, config, ping
+python scripts/preflight.py --connect   # + connect with panda-py and read the state, read the gripper's status (no motion)
 pytest -m "not integration"             # the repo works on this machine
 ```
 
@@ -40,7 +42,7 @@ $$
 \tau = K_p(q_{\mathrm{des}}-q) + K_d(\dot q_{\mathrm{des}}-\dot q) + \tau_{\mathrm{ff}},
 $$
 
-and hands it to panda-py’s `AppliedTorque` controller, which feeds libfranka’s 1 kHz loop (holding the latest value). The FR3 adds gravity compensation on top — the reason all controllers use `plant_gravity_comp: true`. Gripper commands run in their own thread (`move` / `grasp` block until done); `stop` interrupts them.
+and hands it to panda-py’s `AppliedTorque` controller, which feeds libfranka’s 1 kHz loop (holding the latest value). The FR3 adds gravity compensation on top — the reason all controllers use `plant_gravity_comp: true`. Gripper commands run in their own thread (`move` / `grasp` block until done; `robotiq.py` turns them into Modbus position / speed / force requests and waits for the 2F-85's "object detected" status); `stop` interrupts them.
 
 ### Safety layer
 
@@ -56,7 +58,7 @@ On top of the robot’s own reflexes and the **user stop** (keep it in your hand
 
 Keys in the hardware terminal: `q` quit (stops torque control), `h` clear a speed stop, `r` recover after a robot error (reflex), then torque control restarts.
 
-Tested here only against a fake robot (`--robot.backend fake`); see section 4 for how to verify on yours.
+Tested here only against a fake robot (`--robot.backend fake`, which also fakes the gripper behind the same Modbus driver); see section 4 for how to verify on yours.
 
 ---
 
@@ -70,7 +72,7 @@ Increase risk one step at a time, with the user stop in hand:
    python run_controller.py --config configs/franka_fr3/controllers/grav_comp.yaml --env_mode real
    ```
 2. **Robot, no controller.** `run_hardware.py` alone: the arm should hold still (hold mode).
-3. **Gravity compensation** ([03](03_grav_comp.md)): start the grav-comp controller with `--env_mode real`. Hand-guide the arm: it floats. If it drifts, check the gripper load in Desk.
+3. **Gravity compensation** ([03](03_grav_comp.md)): start the grav-comp controller with `--env_mode real`. Hand-guide the arm: it floats. If it drifts, check the gripper load in Desk (0.925 kg).
 4. **Visualizer:** `run_visualizer.py --config configs/visualizer/franka_fr3/default.yaml` should mirror the real arm.
 5. **Impedance** ([08](08_impedance_control.md)), joint mode first, with lowered gains (`--kq_scale 0.3`).
 6. **Collision-aware controllers** ([05](05_collision_aware_grav_comp.md)–[07](07_computed_torque_control.md), [09](09_inverse_kinematics.md)): first describe your cell — walls, table — in a scene XML (`floor`, `wall_*`, `table*`, `obs_*` geoms) and publish it:
@@ -78,7 +80,7 @@ Increase risk one step at a time, with the user stop in hand:
    python run_scene_info.py --config configs/franka_fr3/hardware/scene_info.yaml
    ```
    The default scene’s walls are placeholders.
-7. **Gripper:** the grasping controllers send real `move` / `grasp` commands.
+7. **Gripper:** the grasping controllers send real `move` / `grasp` commands. The 2F-85 squeezes with at least 20 N.
 8. **Grasping with perception** (section 6).
 
 `scripts/launch.sh <target> real` starts the processes of a step in tmux, e.g. `scripts/launch.sh grav_comp real` or `scripts/launch.sh ik_qp real` (with `run_scene_info.py`).
@@ -100,7 +102,8 @@ Increase risk one step at a time, with the user stop in hand:
 |-------|------|
 | `run_hardware.py` | Builds the platform + LCM managers; always shuts torque control down on exit |
 | `robot_platform/hardware/franka_fr3/HardwareFrankaFR3.py` | Command law, safety layer, gripper threads; `PandaPyBackend` / `FakeBackend` |
-| `configs/franka_fr3/hardware/fr3.yaml` | Hostname, safety limits, channels |
+| `robot_platform/hardware/franka_fr3/robotiq.py` | Robotiq 2F-85 driver (Modbus RTU), and a fake gripper behind the same protocol |
+| `configs/franka_fr3/hardware/fr3.yaml` | Hostname, gripper port, safety limits, channels |
 | `run_scene_info.py`, `configs/franka_fr3/hardware/scene_info.yaml` | Collision geometry of the real cell |
 | `run_pose_bridge.py`, `configs/franka_fr3/perception/pose_bridge.yaml` | FoundationPose pose -> `franka_object_pose` |
 | `scripts/preflight.py`, `scripts/launch.sh` | Workstation check, tmux launcher |
@@ -111,7 +114,7 @@ Increase risk one step at a time, with the user stop in hand:
 ## 6. Grasping from perception
 
 ```
-run_sensors.py (RealSense)  --rgbd d455_1-->  run_perception.py (FoundationPose + SAM2, GPU)
+run_sensors.py (ZED ext1)  --rgbd zed_ext1-->  run_perception.py (FoundationPose + SAM2, GPU)
       --fp_obj_pose-->  run_pose_bridge.py  --franka_object_pose-->  grasp controller (--env_mode real)
 ```
 
@@ -125,7 +128,7 @@ where `to_origin` comes from `trimesh.bounds.oriented_bounds` of the same mesh F
 
 Before the first real grasp:
 
-1. **Calibrate the camera** ([14](14_diff_camera_calibration.md)) and put the extrinsics in `configs/sensors/realsense/one_realsense.yaml`. The values there are from an older setup.
+1. **Calibrate the camera** ([14](14_diff_camera_calibration.md)) and put the extrinsics in `configs/sensors/zed/droid.yaml` (`ext1.tf_link_to_cam`; the values there are placeholders). The pipeline uses one external ZED 2 (`ext1`); the wrist ZED Mini is published too but nothing uses its pose yet.
 2. **Check the pose** without the arm moving: run the sensors, perception and the bridge, plus the visualizer, and compare the object with reality. Move the object, and the pose should follow.
 3. **Describe the table** in the scene used by `run_scene_info.py`, so the arm keeps clear of it.
 4. Run it (the configs are for the YCB mustard bottle; change `object_config`, `fp_mesh_file` and the FoundationPose `mesh_file` together):

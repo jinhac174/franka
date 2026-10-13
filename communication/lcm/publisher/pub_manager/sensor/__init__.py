@@ -17,5 +17,9 @@ def get_sensor_pub_manager(cfg_pub_manager: DictConfig) -> BasePubManager:
         return BasePubManager(**cfg_pub_manager)
     elif name == "realsense":
         return RealSensePubManager(**cfg_pub_manager)
+    elif name == "zed":
+        # Same messages (RGB-D + camera info per camera), other config key.
+        cfg = dict(cfg_pub_manager)
+        return RealSensePubManager(realsense=cfg.pop("zed"), **cfg)
     else:
         raise ValueError(f"Unknown sensor publisher manager: {name}")

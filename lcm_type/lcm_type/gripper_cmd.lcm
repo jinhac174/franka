@@ -1,6 +1,7 @@
 package gripper;
 
-// Franka Hand command. Mirrors the libfranka / panda-py gripper API:
+// Gripper command, in metres / newtons (the libfranka gripper API; the Robotiq
+// 2F-85 driver, robot_platform/hardware/franka_fr3/robotiq.py, maps it):
 //   MOVE   : move(width, speed)
 //   GRASP  : grasp(width, speed, force, epsilon_inner, epsilon_outer)
 //   STOP   : stop()

@@ -1,5 +1,5 @@
 <mujoco model="franka_fr3_grasp_cam_scene">
-  <include file="fr3_hand_robot.xml"/>
+  <include file="fr3_robotiq_robot.xml"/>
 
   <compiler angle="radian"/>
 
@@ -37,11 +37,13 @@
     <geom name="wall_left" type="box" size="0.85 0.05 0.9" pos="0.2 -0.55 0.9"
           rgba="0.55 0.57 0.62 0.3" friction="0.5 0.02 0.02"/>
 
-    <!-- Fixed RGB-D workspace camera for the perception -> grasping pipeline:
-         beside the table (+y), looking at the object area in front of the
-         robot, so the arm does not block it during a top-down approach. -->
+    <!-- Fixed RGB-D workspace camera for the perception -> grasping pipeline,
+         standing in for DROID's external ZED 2 (fovy 68 deg = a ZED 2 at
+         HD720, rendered at 640x360 by the env config): beside the table (+y),
+         looking at the object area in front of the robot, so the arm does
+         not block it during a top-down approach. -->
     <body name="scene_camera" pos="0.5 0.55 0.45" xyaxes="-1.0000 -0.0000 0.0000 0.0000 -0.5582 0.8297">
-      <camera name="scene_camera" mode="fixed" pos="0 0 0" euler="0 0 0" fovy="55"/>
+      <camera name="scene_camera" mode="fixed" pos="0 0 0" euler="0 0 0" fovy="68"/>
       <geom name="scene_camera_marker" type="box" size="0.03 0.01 0.015"
             rgba="0.15 0.15 0.15 1" contype="0" conaffinity="0"/>
     </body>

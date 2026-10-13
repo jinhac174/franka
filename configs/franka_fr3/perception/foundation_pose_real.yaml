@@ -1,5 +1,5 @@
 # FoundationPose for the perception -> grasping pipeline on the REAL robot
-# (RealSense via run_sensors.py, configs/sensors/realsense/one_realsense.yaml).
+# (ZED camera ext1 via run_sensors.py, configs/sensors/zed/droid.yaml).
 # The camera extrinsics in that file must be calibrated against the FR3 base.
 name: foundation_pose_tracking_sam2
 
@@ -42,7 +42,7 @@ pose_filter:
 
 sub_manager:
   name: single_rgbd
-  rgbd_channel: d455_1
+  rgbd_channel: zed_ext1
   max_sub_freq: 2000
 pub_manager:
   name: named_vec

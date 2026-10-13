@@ -3,7 +3,7 @@
 Keyboard
 --------
 ``j``  joint-space impedance (spring–damper on ``q_nom - q``)
-``t``  SE(3) task-space impedance at ``task_frame`` (FR3: ``fr3_hand_tcp``)
+``t``  SE(3) task-space impedance at ``task_frame`` (FR3: ``fr3_gripper_tcp``)
 ``p`` / ``q``  pause / quit
 
 Nominal: YAML ``default_q``; task nominal ``T_nom = FK(task_frame, default_q)``.
@@ -96,7 +96,7 @@ class ImpedanceController(BaseController):
         )
         self._oMd = pin.SE3(self._T_nom[:3, :3], self._T_nom[:3, 3])
 
-        # Joint impedance (arm); fingers held with soft plant PD to q_nom.
+        # Joint impedance gains, one per arm joint.
         self._kq_base = np.asarray(config["kq"], dtype=np.float64)
         self._dq_base = np.asarray(config["dq"], dtype=np.float64)
         if self._kq_base.size != self._n or self._dq_base.size != self._n:

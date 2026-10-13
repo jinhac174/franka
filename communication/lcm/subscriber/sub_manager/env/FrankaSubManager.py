@@ -10,7 +10,7 @@ from communication.lcm.subscriber.data_subscriber.JointCtrlSubsriber import (
 
 
 class FrankaSubManager(BaseEnvSubManeager):
-    """Env-side subscriber for the FR3 + Franka Hand.
+    """Env-side subscriber for the FR3 + Robotiq 2F-85.
 
     * ``ctrl_channel``        joint_ctrl_t (7 arm joints) -> ``ctrl_sub_que``
     * ``gripper_cmd_channel`` gripper_cmd_t -> ``intr_sub_que_dict[channel]``

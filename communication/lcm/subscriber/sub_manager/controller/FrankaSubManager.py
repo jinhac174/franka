@@ -26,12 +26,13 @@ from communication.lcm.subscriber.data_subscriber.P2PGainsCmdSubscriber import (
 
 
 class FrankaSubManager(BaseControllerSubManager):
-    """Controller-side subscriber for the FR3 + Franka Hand.
+    """Controller-side subscriber for the FR3 + Robotiq 2F-85.
 
-    ``intr_sub_que_dict`` gets one queue per channel: arm joint_meas (7),
-    finger joint_meas (2), and the optional ones below.
+    ``intr_sub_que_dict`` gets one queue per channel: arm joint_meas (7) and
+    the optional ones below.
 
     Optional channels (empty string = not subscribed):
+      * ``gripper_joint_meas_channel`` joint_meas_t (1): driver angle -> intr
       * ``gripper_state_channel``   gripper_state_t            -> intr
       * ``gains_cmd_channel``       Viser gain sliders         -> intr
         (``gains_cmd_type``: "imp" = imp_gains_cmd_t for the impedance
@@ -45,7 +46,7 @@ class FrankaSubManager(BaseControllerSubManager):
     def __init__(
         self,
         arm_joint_meas_channel: str = "franka_arm_joint_meas",
-        gripper_joint_meas_channel: str = "franka_gripper_joint_meas",
+        gripper_joint_meas_channel: str = "",
         gripper_state_channel: str = "",
         gains_cmd_channel: str = "",
         gains_cmd_type: str = "imp",
@@ -54,7 +55,7 @@ class FrankaSubManager(BaseControllerSubManager):
         object_pose_channel: str = "",
         object_physics_channel: str = "",
         num_arm_joints: int = 7,
-        num_finger_joints: int = 2,
+        num_gripper_joints: int = 1,
         *args,
         **kwargs,
     ):
@@ -63,8 +64,10 @@ class FrankaSubManager(BaseControllerSubManager):
 
         for ch, n in (
             (arm_joint_meas_channel, num_arm_joints),
-            (gripper_joint_meas_channel, num_finger_joints),
+            (gripper_joint_meas_channel, num_gripper_joints),
         ):
+            if not ch:
+                continue
             # Latest wins: controllers read one sample per loop iteration, so
             # an unbounded FIFO would build up stale state (seconds of lag).
             intr[ch] = Queue(maxsize=1)

@@ -1200,8 +1200,17 @@ class RobotArmVisualizer:
             return
         self._goal_urdf.show_visual = bool(visible)
 
+    def _full_cfg(self, q: np.ndarray) -> np.ndarray:
+        """Controllers send arm-only joint vectors (their Pinocchio model has
+        the gripper rigid); the URDF here also has the gripper joint(s), which
+        keep their measured value."""
+        q = np.asarray(q, dtype=float).reshape(-1)
+        if q.size == self._num_arm_joints:
+            q = np.concatenate([q, self._q[self._num_arm_joints :]])
+        return q
+
     def _fk_frame_position(self, q: np.ndarray, frame: str) -> np.ndarray:
-        self._urdf.update_cfg(q)
+        self._urdf.update_cfg(self._full_cfg(q))
         T = self._urdf.get_transform(frame)
         return np.asarray(T[:3, 3], dtype=float).copy()
 
@@ -1214,7 +1223,7 @@ class RobotArmVisualizer:
         if not isinstance(data, JointMeasData):
             return
         _, q, _, tau = data.get_data()
-        q = np.asarray(q, dtype=float).reshape(-1)
+        q = self._full_cfg(q)
         if q.size != self._num_joints:
             return
         # tau[0] == 1 → floating palm+fingers preview (IK reach key 1).

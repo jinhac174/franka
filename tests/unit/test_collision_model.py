@@ -1,4 +1,4 @@
-"""Planning collision model (capsules + hand box) used by every
+"""Planning collision model (capsules + gripper boxes) used by every
 collision-aware controller, and the collision pairs in the configs."""
 
 import glob
@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from robot_platform.sim.franka_fr3.SimFrankaFR3 import (
     ARM_JOINT_NAMES,
     FR3_COL_CAPSULES,
+    FR3_GRIPPER_BOXES,
     fr3_col_primitives,
 )
 from utils.collision.wall_geoms import extract_static_col_geoms
@@ -45,7 +46,7 @@ def _inside(points, prims, data, tol):
 
 def test_primitive_names_map_to_links():
     names = [p["name"] for p in fr3_col_primitives()]
-    assert len(names) == len(set(names)) == len(FR3_COL_CAPSULES) + 1
+    assert len(names) == len(set(names)) == len(FR3_COL_CAPSULES) + len(FR3_GRIPPER_BOXES)
     model = mj.MjModel.from_xml_path(SCENE)
     for n in names:
         assert model.body(col_frame_name(n)) is not None
@@ -73,6 +74,29 @@ def test_capsules_cover_arm_collision_meshes(seed):
         pts = verts @ R.T + data.geom_xpos[gid]
         inside = _inside(pts, prims, data, tol=0.005)
         assert inside.mean() > 0.999, f"{link}: {np.sum(~inside)} vertices outside"
+
+
+def test_gripper_boxes_cover_gripper_collision_meshes():
+    """The gripper's collision meshes (fully open: the widest it gets) lie
+    inside its two planning boxes."""
+    model = mj.MjModel.from_xml_path(SCENE)
+    data = mj.MjData(model)
+    for n, q in zip(ARM_JOINT_NAMES, [0, -0.785, 0, -2.356, 0, 1.571, 0.785]):
+        data.qpos[model.joint(n).qposadr[0]] = q
+    mj.mj_kinematics(model, data)
+    prims = [p for p in fr3_col_primitives() if p["name"].startswith("fr3_gripper")]
+    root = model.body("fr3_gripper").id
+    for gid in range(model.ngeom):
+        b = model.geom_bodyid[gid]
+        while b > root:
+            b = model.body_parentid[b]
+        if b != root or model.geom_group[gid] != 3 or model.geom_type[gid] != mj.mjtGeom.mjGEOM_MESH:
+            continue
+        mid = model.geom_dataid[gid]
+        a, n = model.mesh_vertadr[mid], model.mesh_vertnum[mid]
+        pts = model.mesh_vert[a:a + n] @ data.geom_xmat[gid].reshape(3, 3).T + data.geom_xpos[gid]
+        inside = _inside(pts, prims, data, tol=0.002)
+        assert inside.all(), f"{model.geom(gid).name}: {np.sum(~inside)} vertices outside"
 
 
 def _config_pairs():

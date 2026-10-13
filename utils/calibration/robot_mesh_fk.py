@@ -12,7 +12,7 @@ from yourdfpy import URDF
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 _DEFAULT_URDF = os.path.join(
-    _REPO_ROOT, "assets/scene/franka_fr3/urdf/fr3_hand.urdf"
+    _REPO_ROOT, "assets/scene/franka_fr3/urdf/fr3_robotiq.urdf"
 )
 
 # Flat gray in [0, 255] for silhouette-style rendering.
@@ -50,12 +50,8 @@ def _default_robot_links(
             keep.add(name)
         elif arm_name.startswith("link") and arm_name[4:].isdigit():
             keep.add(name)
-        elif not arm_only and name in ("palm", "fr3_hand"):
-            keep.add(name)
-        elif not arm_only and (
-            name.startswith("finger_r_link_") or name in ("fr3_leftfinger", "fr3_rightfinger")
-        ):
-            keep.add(name)
+        elif not arm_only and (name == "fr3_gripper" or name.startswith("robotiq_")):
+            keep.add(name)  # Robotiq 2F-85 body + linkage
     return keep
 
 

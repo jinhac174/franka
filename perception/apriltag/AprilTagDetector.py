@@ -75,7 +75,7 @@ class AprilTagDetector(BasePerception):
             self._pose_filter: Optional[SE3LowPassFilter] = None
 
         # Communication channels
-        self._rgbd_channel = config.get("sub_manager", {}).get("rgbd_channel", "d455_1")
+        self._rgbd_channel = config.get("sub_manager", {}).get("rgbd_channel", "zed_ext1")
         self._object_name = config.get("object_name", f"apriltag_{self._target_tag_id}")
         self._publisher_name = config.get("pub_manager", {}).get("name", "named_vec")
 
@@ -348,7 +348,7 @@ def main():
             "visualize": True,
             "debug": True,
             "pose_filter": {"use_filter": False, "alpha": 0.1, "window_size": 0},
-            "sub_manager": {"rgbd_channel": "d455_1"},
+            "sub_manager": {"rgbd_channel": "zed_ext1"},
             "pub_manager": {
                 "name": "named_vec",
                 "named_vec_list_channel": "apriltag_pose",

@@ -1,4 +1,4 @@
-"""Reactive parallel-jaw grasping for the FR3 + Franka Hand (tutorial 10).
+"""Reactive parallel-jaw grasping for the FR3 + Robotiq 2F-85 (tutorial 10).
 
 Pipeline
 --------
@@ -435,7 +435,6 @@ class ParallelJawGraspController(IKQPController):
         ``ik_limit_margin`` so the solution is not right at a limit.
         """
         n = self._num_ctrl_joints
-        # Margin on the arm joints only (the finger range is just 0-0.04 m).
         lo, hi = self._q_lower.copy(), self._q_upper.copy()
         lo[:n] += self._ik_limit_margin
         hi[:n] -= self._ik_limit_margin

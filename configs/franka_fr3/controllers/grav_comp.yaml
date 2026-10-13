@@ -2,13 +2,13 @@ name: grav_comp
 ctrl_freq: 1000
 env_mode: sim_real_time
 
-# Pinocchio model joints: [arm(7), finger1, finger2]. Only the 7 arm joints
-# are commanded; the fingers go through the gripper API.
-num_joints: 9
+# Pinocchio model: the 7 arm joints (urdf/fr3_robotiq_rigid.urdf: the Robotiq
+# gripper is a rigid payload). The gripper goes through the gripper API.
+num_joints: 7
 num_arm_joints: 7
 num_ctrl_joints: 7
 
-urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
 
 # The FR3 (and the sim with platform.gravity_comp: true) compensates gravity
 # itself, so this controller only adds damping. Set false together with the
@@ -16,7 +16,7 @@ urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
 plant_gravity_comp: true
 
 # Optional seed before the first measurement arrives.
-default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
 
 # Viscous damping on the arm joints only (Nm / (rad/s)).
 arm_damping: 0.5
@@ -25,14 +25,10 @@ dict_joints:
   arm:
     joint_meas_channel: franka_arm_joint_meas
     list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
-  gripper:
-    joint_meas_channel: franka_gripper_joint_meas
-    list_joint_idx: [7, 8]
 
 sub_manager:
   name: franka
   arm_joint_meas_channel: franka_arm_joint_meas
-  gripper_joint_meas_channel: franka_gripper_joint_meas
 
 pub_manager:
   name: joint_ctrl

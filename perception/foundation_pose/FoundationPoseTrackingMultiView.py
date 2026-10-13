@@ -296,7 +296,7 @@ class FoundationPoseTrackingMultiView(BasePerception):
         channels = sub_cfg.get("rgbd_channels", None)
         if channels is None:
             # tolerate single-view style config
-            channels = [sub_cfg.get("rgbd_channel", "d455_1")]
+            channels = [sub_cfg.get("rgbd_channel", "zed_ext1")]
         self._channels: List[str] = list(channels)
         self._views: List[_ViewState] = [_ViewState(ch) for ch in self._channels]
 

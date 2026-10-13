@@ -1,15 +1,18 @@
-"""Real Franka Research 3 + Franka Hand through panda-py.
+"""Real Franka Research 3 (panda-py) + Robotiq 2F-85 (Modbus over USB): the
+DROID setup.
 
 Same LCM contract as the simulator (``SimFrankaFR3``), so every controller runs
 unchanged on the robot (with ``env_mode: real``):
 
 * in : ``joint_ctrl_t`` (7 arm joints) -> ``tau = kp (q_des - q) + kd (qd_des - qd) + tau_ff``
-       ``gripper_cmd_t``               -> move / grasp / stop / homing
-* out: ``joint_meas_t`` arm (q, dq, tau_J), ``joint_meas_t`` fingers (width / 2
-       each), ``gripper_state_t``
+       ``gripper_cmd_t``               -> move / grasp / stop / homing (robotiq.py)
+* out: ``joint_meas_t`` arm (q, dq, tau_J), ``joint_meas_t`` gripper (driver
+       angle, for Viser), ``gripper_state_t``
 
 The FR3 compensates gravity itself in torque control, exactly like the sim
-with ``gravity_comp: true``: the commanded torque goes on top of it.
+with ``gravity_comp: true``: the commanded torque goes on top of it. Set the
+end-effector load in Desk to the gripper (0.925 kg, centre of mass 5.2 cm
+beyond the flange on its axis), otherwise the arm sags or drifts up.
 
 panda-py runs libfranka's 1 kHz torque loop in C++ (``AppliedTorque``) and
 always applies the latest torque this process set (zero-order hold). This
@@ -46,7 +49,9 @@ from data_type.basic_types.GripperCmdData import GripperCmdData
 from data_type.basic_types.GripperStateData import GripperStateData
 from data_type.basic_types.JointCtrlData import JointCtrlData
 from data_type.basic_types.JointMeasData import JointMeasData
+from robot_platform.gripper import robotiq_2f85 as rq
 from robot_platform.hardware.BaseHardwarePlatform import BaseHardwarePlatform
+from robot_platform.hardware.franka_fr3.robotiq import FakeRobotiqTransport, RobotiqGripper
 
 N = 7
 FR3_TAU_MAX = np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
@@ -63,14 +68,10 @@ class PandaPyBackend:
 
     def __init__(self, hostname: str):
         import panda_py
-        from panda_py import controllers, libfranka
+        from panda_py import controllers
 
         self._panda_py, self._controllers = panda_py, controllers
         self._panda = panda_py.Panda(hostname)
-        # Two gripper connections: one runs the blocking actions, the other
-        # reads the state (and can stop an action) meanwhile.
-        self._gripper_cmd = libfranka.Gripper(hostname)
-        self._gripper_read = libfranka.Gripper(hostname)
         self._ctrl = None
 
     def start_torque(self):
@@ -94,28 +95,11 @@ class PandaPyBackend:
     def set_torque(self, tau):
         self._ctrl.set_control(np.asarray(tau, dtype=np.float64))
 
-    def gripper_action(self, mode, width, speed, force, eps_in, eps_out) -> bool:
-        g = self._gripper_cmd
-        if mode == GripperCmdData.MOVE:
-            return g.move(width, speed)
-        if mode == GripperCmdData.GRASP:
-            return g.grasp(width, speed, force, eps_in, eps_out)
-        if mode == GripperCmdData.HOMING:
-            return g.homing()
-        return True
-
-    def gripper_stop(self) -> bool:
-        return self._gripper_read.stop()
-
-    def gripper_state(self):
-        s = self._gripper_read.read_once()
-        return s.width, s.max_width, s.is_grasped
-
 
 class FakeBackend:
     """No robot: a crude 7-joint plant (gravity already compensated, like the
-    FR3) and an instant-ish gripper. For testing this process and the safety
-    layer on a machine without a robot."""
+    FR3). For testing this process and the safety layer on a machine without
+    a robot (the gripper is faked separately: ``gripper.backend: fake``)."""
 
     def __init__(self, q0=None):
         self._q = np.array(q0 if q0 is not None else [0, -np.pi / 4, 0, -3 * np.pi / 4, 0, np.pi / 2, np.pi / 4], dtype=float)
@@ -123,7 +107,6 @@ class FakeBackend:
         self._tau = np.zeros(N)
         self._inertia = np.array([0.76, 1.83, 1.22, 1.2, 0.12, 0.13, 0.08])
         self._t = time.time()
-        self._width, self._grasped = 0.08, False
         self._lock = threading.Lock()
 
     def start_torque(self):
@@ -156,21 +139,6 @@ class FakeBackend:
             self._integrate()
             self._tau = np.asarray(tau, dtype=float).copy()
 
-    def gripper_action(self, mode, width, speed, force, eps_in, eps_out) -> bool:
-        target = 0.08 if mode == GripperCmdData.HOMING else float(width)
-        if mode == GripperCmdData.GRASP:
-            target = 0.0  # nothing in the fake hand
-        time.sleep(abs(self._width - target) / max(speed, 1e-3))
-        self._width = target
-        self._grasped = False
-        return mode != GripperCmdData.GRASP or eps_in >= width
-
-    def gripper_stop(self) -> bool:
-        return True
-
-    def gripper_state(self):
-        return self._width, 0.08, self._grasped
-
 
 # ---------------------------------------------------------------------------
 class HardwareFrankaFR3(BaseHardwarePlatform):
@@ -180,6 +148,12 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         self._backend_name = str(hw.get("backend", "pandapy"))
         self._hostname = str(hw.get("hostname", ""))
         self._move_to_start = bool(hw.get("move_to_start", False))
+        gc = config.get("gripper", {}) or {}
+        self._gripper_backend = str(gc.get("backend", "auto"))
+        if self._gripper_backend == "auto":
+            self._gripper_backend = "fake" if self._backend_name == "fake" else "robotiq"
+        self._gripper_port = str(gc.get("port", "/dev/ttyUSB0"))
+        self._gripper_activate = bool(gc.get("activate_on_start", True))
 
         s = config["safety"]
         self._tau_max = np.minimum(np.asarray(s.get("tau_max", FR3_TAU_MAX), dtype=float), FR3_TAU_MAX)
@@ -192,12 +166,13 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
 
         pm = config["pub_manager"]
         self._arm_ch = pm["arm_joint_meas_channel"]
-        self._finger_ch = pm["gripper_joint_meas_channel"]
+        self._gripper_joint_ch = pm["gripper_joint_meas_channel"]
         self._gstate_ch = pm.get("gripper_state_channel", "")
         self._gripper_cmd_ch = config["sub_manager"].get("gripper_cmd_channel", "")
         self._gripper_rate = float(config.get("gripper_state_freq", 30.0))
 
         self._backend = None
+        self._gripper = None
         self._gripper_cmd_que = None
         self._last_cmd: JointCtrlData | None = None
         self._last_cmd_t = 0.0
@@ -236,6 +211,16 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         if self._move_to_start:
             print("[FR3] Moving to the start pose ...")
             self._backend.move_to_start()
+        if self._gripper_backend == "fake":
+            self._gripper = RobotiqGripper(transport=FakeRobotiqTransport())
+        else:
+            print(f"[FR3] Robotiq 2F-85 on {self._gripper_port} ...")
+            self._gripper = RobotiqGripper(self._gripper_port)
+        if self._gripper_activate:
+            # Activation makes the 2F-85 close and open once (it calibrates):
+            # keep the fingers clear.
+            print("[FR3] Activating the gripper (it closes and opens once) ...")
+            self._gripper.homing()
         q, _, _ = self._backend.state()
         self._hold_q = q.copy()
         self._tau_prev = np.zeros(N)
@@ -352,7 +337,7 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
                 continue
             self._gripper_done_seq = cmd.seq
             if cmd.mode == GripperCmdData.STOP:
-                ok = self._backend.gripper_stop()
+                ok = self._gripper.stop()
                 self._gripper_last = (cmd.seq, bool(ok))
             else:
                 self._gripper_actions.put(cmd)
@@ -365,7 +350,7 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
                 continue
             self._gripper_busy = True
             try:
-                ok = self._backend.gripper_action(
+                ok = self._gripper.action(
                     cmd.mode, cmd.width, cmd.speed, cmd.force, cmd.epsilon_inner, cmd.epsilon_outer
                 )
             except Exception as e:  # noqa: BLE001 - a failed action is reported, not fatal
@@ -375,21 +360,21 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
             self._gripper_busy = False
 
     def _gripper_state_loop(self):
-        finger = JointMeasData(num_joints=2)
+        joint = JointMeasData(num_joints=1)
         state = GripperStateData()
         while not self._stop_event.is_set():
             t0 = time.time()
             try:
-                width, max_width, grasped = self._backend.gripper_state()
+                width, max_width, grasped = self._gripper.state()
             except Exception as e:  # noqa: BLE001
                 print(f"[FR3] Gripper read failed: {e}")
                 time.sleep(1.0)
                 continue
-            half = 0.5 * width
-            finger.set_data(t0, np.array([half, half]), np.zeros(2), np.zeros(2))
+            angle = float(rq.angle_from_width(width))  # Viser draws the linkage from it
+            joint.set_data(t0, np.array([angle]), np.zeros(1), np.zeros(1))
             seq, ok = self._gripper_last
             state.set_data(t0, width, max_width, grasped, self._gripper_busy, seq, ok)
-            for ch, data in ((self._finger_ch, finger), (self._gstate_ch, state)):
+            for ch, data in ((self._gripper_joint_ch, joint), (self._gstate_ch, state)):
                 que = self.intr_pub_que_dict.get(ch) if ch else None
                 if que is not None:
                     que.put(copy.deepcopy(data))

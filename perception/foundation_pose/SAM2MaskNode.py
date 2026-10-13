@@ -98,7 +98,7 @@ class SAM2MaskNode(BasePerception):
         sub_cfg = config.get("sub_manager", {})
         channels = sub_cfg.get("rgbd_channels", None)
         if channels is None:
-            channels = [sub_cfg.get("rgbd_channel", "d455_1")]
+            channels = [sub_cfg.get("rgbd_channel", "zed_ext1")]
         self._channels: List[str] = list(channels)
 
         # per-view mask output channels. Config may give an explicit list;

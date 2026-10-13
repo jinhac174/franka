@@ -1,7 +1,8 @@
 # Franka FR3 tutorials: control, grasping, perception
 
-Torque-level control of a **Franka Research 3** with the **Franka Hand**, in
-MuJoCo and on the real robot, all in Python. Each piece runs as its own process:
+Torque-level control of a **Franka Research 3** with a **Robotiq 2F-85**
+gripper and **ZED** cameras (the DROID setup), in MuJoCo and on the real
+robot, all in Python. Each piece runs as its own process:
 the simulator or the robot, a controller, a visualizer, and perception. They
 talk over **LCM** (there is no ROS in this repo).
 
@@ -12,7 +13,7 @@ controller  ──────────────────────�
             joint_meas_t (q, qd, tau_J), gripper_state_t      run_hardware.py (panda-py → FR3)
                   ▲
                   │ franka_object_pose (se3_pose_t)
-run_pose_bridge.py ◄── fp_obj_pose ── run_perception.py (FoundationPose) ◄── RGB-D camera
+run_pose_bridge.py ◄── fp_obj_pose ── run_perception.py (FoundationPose) ◄── RGB-D camera (ZED)
 ```
 
 Both the simulator and the robot apply the same law to every command:
@@ -86,14 +87,15 @@ Any YAML value can be overridden on the command line, e.g.
 | `controller/` | Controllers; `BaseController` has the control loop |
 | `env/` | MuJoCo envs (`BaseEnv` loop, collision / grasp / camera variants) |
 | `robot_platform/sim/franka_fr3/` | Sim plant: command law, gravity comp, gripper emulation, tau_J |
-| `robot_platform/hardware/franka_fr3/` | Real plant: panda-py backend, safety layer, gripper threads |
+| `robot_platform/hardware/franka_fr3/` | Real plant: panda-py backend, safety layer, Robotiq driver (`robotiq.py`, Modbus over USB) |
+| `robot_platform/gripper/robotiq_2f85.py` | 2F-85 geometry and ranges shared by sim, hardware, visualizer, grasping |
 | `communication/lcm/` | Pub/sub managers (one per process type) and per-message publishers/subscribers |
 | `data_type/`, `lcm_type/` | In-process data classes and LCM message types |
 | `utils/` | Pinocchio / FCL helpers, grasping (`utils/grasping`), collision, calibration |
-| `perception/`, `sensor/` | FoundationPose + SAM2, RealSense |
+| `perception/`, `sensor/` | FoundationPose + SAM2; ZED (DROID) and RealSense camera drivers |
 | `visualizer/` | viser-based 3D visualizer |
 | `configs/` | All YAML configs (`configs/franka_fr3/*` for the robot) |
-| `assets/scene/franka_fr3/` | FR3 + hand MJCF, scenes, URDF |
+| `assets/scene/franka_fr3/` | FR3 + Robotiq 2F-85 MJCF, scenes, URDFs (articulated for Viser, rigid gripper for the controllers) |
 | `tests/` | Unit + integration tests |
 | `scripts/` | `launch.sh` (tmux), `preflight.py` (robot workstation), `lcm_echo.py` (watch the LCM traffic) |
 

@@ -23,7 +23,7 @@ from communication.lcm.publisher.data_publisher.SE3PosePublisher import (
 
 
 class FrankaPubManager(BaseEnvPubManager):
-    """Env-side publisher for the FR3 + Franka Hand.
+    """Env-side publisher for the FR3 + Robotiq 2F-85.
 
     Channel names must match the ones the SimFrankaFR3 platform writes to
     (the env config passes the same keys to both).

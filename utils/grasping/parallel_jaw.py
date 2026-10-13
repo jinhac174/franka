@@ -1,4 +1,4 @@
-"""Parallel-jaw (Franka Hand) grasp geometry and mechanics.
+"""Parallel-jaw (Robotiq 2F-85) grasp geometry and mechanics.
 
 Shared by the grasping tutorials:
 
@@ -6,16 +6,20 @@ Shared by the grasping tutorials:
   two-finger gripper can squeeze without slipping (friction-cone test).
 * :func:`grasp_tcp_poses` -- each contact pair becomes several gripper poses
   (TCP frame), one per approach direction around the closing axis.
-* :class:`HandCollisionChecker` -- palm + finger boxes vs the object mesh (FCL).
+* :class:`HandCollisionChecker` -- gripper body + finger boxes vs the object mesh (FCL).
 * :func:`required_grip_force` -- the smallest squeeze force that holds an
   object's weight for a given grasp (soft-finger contact model).
 
 Frames
 ------
-TCP frame of the Franka Hand (URDF ``fr3_hand_tcp``): ``+z`` points from the
-hand towards the object (approach), ``+y`` is the finger closing axis, the
-origin is midway between the fingertip pads. The hand frame ``fr3_hand`` is the
-TCP frame shifted by ``-TCP_OFFSET`` along ``z``.
+TCP frame of the gripper (URDF ``fr3_gripper_tcp``): ``+z`` points from the
+gripper towards the object (approach), ``+y`` is the finger closing axis, the
+origin is midway between the pad faces. The gripper frame ``fr3_gripper`` (on
+the flange) is the TCP frame shifted by ``-TCP_OFFSET`` along ``z``.
+
+The 2F-85's pads ride on an arc: at width ``w`` their centres sit
+``pad_z(w) - TCP_Z`` beyond the TCP (-8 mm fully open .. +5 mm closed), which
+:func:`grasp_tcp_poses` corrects for.
 """
 
 from __future__ import annotations
@@ -26,15 +30,24 @@ import fcl
 import numpy as np
 import trimesh
 
-# --- Franka Hand geometry (measured from the MuJoCo / URDF model) -----------
-MAX_WIDTH = 0.08  # fully open (m)
-TCP_OFFSET = 0.1034  # fr3_hand -> fr3_hand_tcp along z (m)
-# One finger as a box, in the TCP frame: inner face at y = width/2.
-FINGER_EXTENTS = np.array([0.021, 0.0265, 0.054])  # x, y (thickness), z (length)
-FINGER_CENTRE_Z = 0.0854 - TCP_OFFSET  # finger reaches 9 mm past the TCP
-# Palm housing (same box as the planning model in SimFrankaFR3.FR3_HAND_BOX).
-PALM_EXTENTS = np.array([0.065, 0.21, 0.094])
-PALM_CENTRE = np.array([0.0, -0.002, 0.02 - TCP_OFFSET])
+from robot_platform.gripper import robotiq_2f85 as rq
+
+# --- Robotiq 2F-85 geometry (measured from the MuJoCo model) ---------------
+MAX_WIDTH = rq.MAX_WIDTH  # fully open (m)
+TCP_OFFSET = rq.TCP_Z  # fr3_gripper -> fr3_gripper_tcp along z (m)
+# One fingertip (follower link + pad) as a box: inner face at y = width/2,
+# reaching from 38 mm below to 19 mm beyond the pad centre (pad_z).
+FINGER_EXTENTS = np.array([0.022, 0.032, 0.057])  # x, y (thickness), z (length)
+FINGER_CENTRE_DZ = -0.0095  # box centre relative to the pad centre, along z
+# Gripper body + the linkage roots between the fingers, up to 110 mm above the
+# flange (frame fr3_gripper; TCP frame = minus TCP_OFFSET along z).
+PALM_EXTENTS = np.array([0.075, 0.085, 0.110])
+PALM_CENTRE = np.array([0.0, 0.0, 0.055 - TCP_OFFSET])
+# Outer linkage on each side (driver, coupler, spring link): from the pad face
+# line out to |y| = 75 mm, 56-125 mm above the flange.
+LINKAGE_X = 0.039
+LINKAGE_Y_OUT = 0.075
+LINKAGE_Z = (0.056, 0.125)
 
 
 @dataclass
@@ -141,10 +154,13 @@ def grasp_tcp_poses(grasps: AntipodalGrasps, num_approach: int = 12):
 
     Returns ``(T, pair_idx)``: ``T`` is ``(N*K, 4, 4)`` with ``y`` along the
     pair axis and ``z`` (approach) swept around it in ``K`` steps; ``pair_idx``
-    maps each pose back to its contact pair.
+    maps each pose back to its contact pair. The TCP is placed so the pad
+    centres (not the TCP) land on the contact pair once the fingers close to
+    the pair's width (see ``robotiq_2f85.pad_z``).
     """
     T_all, idx = [], []
-    for i, (c, y) in enumerate(zip(grasps.centre, grasps.axis)):
+    for i, (c, y, w) in enumerate(zip(grasps.centre, grasps.axis, grasps.width)):
+        dz = float(rq.pad_z(w)) - TCP_OFFSET  # pad centres beyond the TCP
         ref = np.array([0.0, 0.0, 1.0]) if abs(y[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
         z0 = np.cross(y, np.cross(ref, y))
         z0 /= np.linalg.norm(z0)
@@ -155,25 +171,32 @@ def grasp_tcp_poses(grasps: AntipodalGrasps, num_approach: int = 12):
             x = np.cross(y, z)
             T = np.eye(4)
             T[:3, :3] = np.column_stack([x, y, z])
-            T[:3, 3] = c
+            T[:3, 3] = c - dz * z
             T_all.append(T)
             idx.append(i)
     return np.asarray(T_all), np.asarray(idx, dtype=int)
 
 
 def hand_boxes(width: float):
-    """Palm + two finger boxes as ``[(extents, centre)]`` in the TCP frame,
-    with the fingers opened to ``width``."""
+    """Gripper body, two fingertips and two outer linkages as
+    ``[(extents, centre)]`` in the TCP frame, opened to ``width``."""
     half = 0.5 * width + 0.5 * FINGER_EXTENTS[1]
+    tip_z = float(rq.pad_z(width)) + FINGER_CENTRE_DZ - TCP_OFFSET
+    lo = max(0.5 * width, 0.008)
+    link_ext = np.array([LINKAGE_X, LINKAGE_Y_OUT - lo, LINKAGE_Z[1] - LINKAGE_Z[0]])
+    link_y = 0.5 * (lo + LINKAGE_Y_OUT)
+    link_z = 0.5 * (LINKAGE_Z[0] + LINKAGE_Z[1]) - TCP_OFFSET
     return [
         (PALM_EXTENTS, PALM_CENTRE),
-        (FINGER_EXTENTS, np.array([0.0, half, FINGER_CENTRE_Z])),
-        (FINGER_EXTENTS, np.array([0.0, -half, FINGER_CENTRE_Z])),
+        (FINGER_EXTENTS, np.array([0.0, half, tip_z])),
+        (FINGER_EXTENTS, np.array([0.0, -half, tip_z])),
+        (link_ext, np.array([0.0, link_y, link_z])),
+        (link_ext, np.array([0.0, -link_y, link_z])),
     ]
 
 
 def lowest_hand_point(T_world_tcp: np.ndarray, width: float) -> float:
-    """Lowest world z over the palm and finger boxes (for table clearance)."""
+    """Lowest world z over the gripper boxes (for table clearance)."""
     R, p = T_world_tcp[:3, :3], T_world_tcp[:3, 3]
     signs = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
     z_min = np.inf
@@ -184,7 +207,7 @@ def lowest_hand_point(T_world_tcp: np.ndarray, width: float) -> float:
 
 
 class HandCollisionChecker:
-    """FCL check of the open Franka Hand against an object mesh."""
+    """FCL check of the open gripper against an object mesh."""
 
     def __init__(self, mesh: trimesh.Trimesh):
         bvh = fcl.BVHModel()
@@ -194,7 +217,7 @@ class HandCollisionChecker:
         self._obj = fcl.CollisionObject(bvh, fcl.Transform())
 
     def collides(self, T_obj_tcp: np.ndarray, width: float, margin: float = 0.0) -> bool:
-        """True if palm or fingers (opened to ``width``) come within
+        """True if the gripper (opened to ``width``) comes within
         ``margin`` of the object, with the TCP at ``T_obj_tcp`` (object frame)."""
         R, p = T_obj_tcp[:3, :3], T_obj_tcp[:3, 3]
         for ext, ctr in hand_boxes(width):

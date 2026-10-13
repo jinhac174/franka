@@ -5,9 +5,9 @@ franka_fr3:
   arm_joint_meas_channel: franka_arm_joint_meas
   gripper_joint_meas_channel: franka_gripper_joint_meas
   num_arm_joints: 7
-  num_finger_joints: 2
+  num_gripper_joints: 1   # the Robotiq driver angle
 
-  urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+  urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq.urdf
   mesh_dir: ""
 
   # Collision-info channels for the "Show collision geometry" overlay and the
@@ -19,7 +19,7 @@ franka_fr3:
   # P2P overlays from MinimumJerkP2PControl.
   target_joint_channel: franka_p2p_target_joint
   traj_channel: franka_p2p_joint_traj
-  traj_frame: fr3_hand_tcp
+  traj_frame: fr3_gripper_tcp
   status_channel: franka_p2p_status
   gains_cmd_channel: franka_p2p_gains_cmd
   # Initial Viser slider values (should match controller defaults).
@@ -35,8 +35,8 @@ franka_fr3:
   # the sampled pose).
   palm_pose_channel: franka_ik_reach_pose
   palm_frame_axes_length: 0.08
-  float_hand_link: fr3_hand
-  float_hand_frame: fr3_hand_tcp
+  float_hand_link: fr3_gripper
+  float_hand_frame: fr3_gripper_tcp
 
   # Draw dashed nearest-point lines when FCL distance < this threshold (m).
   # Red = robot <-> environment; orange = self-collision.
@@ -67,12 +67,12 @@ franka_fr3:
     - ["fr3_link7__2", "wall_back"]
     - ["fr3_link7__2", "wall_left"]
     - ["fr3_link7__2", "floor"]
-    - ["fr3_hand", "wall_back"]
-    - ["fr3_hand", "wall_left"]
-    - ["fr3_hand", "floor"]
-    - ["fr3_hand__2", "wall_back"]
-    - ["fr3_hand__2", "wall_left"]
-    - ["fr3_hand__2", "floor"]
+    - ["fr3_gripper", "wall_back"]
+    - ["fr3_gripper", "wall_left"]
+    - ["fr3_gripper", "floor"]
+    - ["fr3_gripper__2", "wall_back"]
+    - ["fr3_gripper__2", "wall_left"]
+    - ["fr3_gripper__2", "floor"]
 
   # Self-collision pairs: the ones Franka's SRDF leaves enabled (all other
   # link pairs are adjacent or can never touch).
@@ -82,22 +82,22 @@ franka_fr3:
     - ["fr3_link6", "fr3_link0"]
     - ["fr3_link7", "fr3_link0"]
     - ["fr3_link7__2", "fr3_link0"]
-    - ["fr3_hand__2", "fr3_link0"]
-    - ["fr3_hand", "fr3_link0"]
+    - ["fr3_gripper__2", "fr3_link0"]
+    - ["fr3_gripper", "fr3_link0"]
     - ["fr3_link5", "fr3_link1"]
     - ["fr3_link5__2", "fr3_link1"]
     - ["fr3_link6", "fr3_link1"]
     - ["fr3_link7", "fr3_link1"]
     - ["fr3_link7__2", "fr3_link1"]
-    - ["fr3_hand__2", "fr3_link1"]
-    - ["fr3_hand", "fr3_link1"]
+    - ["fr3_gripper__2", "fr3_link1"]
+    - ["fr3_gripper", "fr3_link1"]
     - ["fr3_link5", "fr3_link2"]
     - ["fr3_link5__2", "fr3_link2"]
     - ["fr3_link7", "fr3_link2"]
     - ["fr3_link7__2", "fr3_link2"]
-    - ["fr3_hand__2", "fr3_link2"]
-    - ["fr3_hand", "fr3_link2"]
-    - ["fr3_hand__2", "fr3_link5"]
-    - ["fr3_hand", "fr3_link5"]
-    - ["fr3_hand__2", "fr3_link5__2"]
-    - ["fr3_hand", "fr3_link5__2"]
+    - ["fr3_gripper__2", "fr3_link2"]
+    - ["fr3_gripper", "fr3_link2"]
+    - ["fr3_gripper__2", "fr3_link5"]
+    - ["fr3_gripper", "fr3_link5"]
+    - ["fr3_gripper__2", "fr3_link5__2"]
+    - ["fr3_gripper", "fr3_link5__2"]

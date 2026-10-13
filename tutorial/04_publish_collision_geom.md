@@ -18,7 +18,7 @@ You can run this env alone. The visualizer is optional here: tick **Show collisi
 
 | Channel | Who uses it | Frame | Contents |
 |---------|-------------|-------|----------|
-| `franka_robot_col_info` | Controller / viz | **Link-local** | Simple shapes attached to robot links (capsules, a box for the hand) |
+| `franka_robot_col_info` | Controller / viz | **Link-local** | Simple shapes attached to robot links (capsules for the arm, two boxes for the gripper) |
 | `franka_static_col_info` | Controller / viz | **World** | Floor and walls |
 
 Each named primitive is a small record:
@@ -31,9 +31,9 @@ The env republishes on a timer (`col_info_update_dt`) so a controller that start
 
 ### Where the FR3 shapes come from
 
-Franka ships its own coarse collision model with the robot description: one or two **capsules** per link (a cylinder with hemispherical ends). The robot firmware uses exactly these for its self-collision checks. We reuse them, with one change: the hand body is a **box**, because the single hand capsule leaves the square housing corners up to 3 cm outside (Franka covers that with a 3 cm safety inflation; our controllers use smaller margins).
+Franka ships its own coarse collision model with the robot description: one or two **capsules** per link (a cylinder with hemispherical ends). The robot firmware uses exactly these for its self-collision checks. We reuse them for the arm. The Robotiq 2F-85 gets two **boxes** fitted to its collision meshes: one around its body (`fr3_gripper`) and one around the fingers fully open (`fr3_gripper__2`, conservative when they close).
 
-Together the shapes enclose every vertex of the arm’s collision meshes at any pose (the fingers poke out by under 1 cm).
+Together the shapes enclose every vertex of the arm’s and the gripper’s collision meshes at any pose (checked in `tests/unit/test_collision_model.py`).
 
 ### Why not reuse MuJoCo meshes?
 
@@ -79,7 +79,7 @@ Controllers turn those into inequality constraints (“do not reduce $d$ too qui
 | Piece | Role |
 |-------|------|
 | `env/MujocoColEnv.py` | Builds primitives and publishes `ColInfo` |
-| `SimFrankaFR3.get_col_info_data` / `FR3_COL_CAPSULES` | FR3 link capsules + hand box |
+| `SimFrankaFR3.get_col_info_data` / `FR3_COL_CAPSULES`, `FR3_GRIPPER_BOXES` | FR3 link capsules + two gripper boxes |
 | `utils/collision/wall_geoms.py` | Floor / wall boxes, read from named MJCF geoms (`floor`, `wall_*`, `table*`, `obs_*`) |
 | `utils/fcl/getter.py` | Primitive → FCL shape; `col_frame_name` for `__k` names |
 | `ColInfoData` + `col_info.lcm` | Message schema |

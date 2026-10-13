@@ -105,7 +105,7 @@ class Listener:
 ENV = "run_env.py --vis_mode vis_off --config"
 CTRL = "run_controller.py --config"
 HOME_Q = [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
-URDF = "assets/scene/franka_fr3/urdf/fr3_hand.urdf"
+URDF = "assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf"
 
 
 def decoders():
@@ -136,10 +136,10 @@ class TcpFK:
         self.np, self.pin = np, pin
         self.m = pin.buildModelFromUrdf(URDF)
         self.d = self.m.createData()
-        self.fid = self.m.getFrameId("fr3_hand_tcp")
+        self.fid = self.m.getFrameId("fr3_gripper_tcp")
 
     def __call__(self, q7):
-        q = self.np.r_[self.np.asarray(q7, float), 0.04, 0.04]
+        q = self.np.asarray(q7, float)  # the controllers' model: arm only
         self.pin.forwardKinematics(self.m, self.d, q)
         self.pin.updateFramePlacements(self.m, self.d)
         return self.d.oMf[self.fid].translation.copy()

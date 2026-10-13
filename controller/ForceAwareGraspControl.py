@@ -1,4 +1,4 @@
-"""Force-aware parallel-jaw pick for the FR3 + Franka Hand (tutorial 12).
+"""Force-aware parallel-jaw pick for the FR3 + Robotiq 2F-85 (tutorial 12).
 
 Extends tutorial 10's reactive grasp with "weigh, then squeeze":
 
@@ -43,8 +43,8 @@ class ForceAwareGraspController(ParallelJawGraspController):
         self._f_probe = float(f.get("probe_force", 30.0))
         self._min_mass = float(f.get("min_mass", 0.05))
         self._safety = float(f.get("safety_factor", 2.5))
-        self._f_min = float(f.get("f_min", 5.0))
-        self._f_max = float(f.get("f_max", 70.0))
+        self._f_min = float(f.get("f_min", 20.0))  # 2F-85 minimum
+        self._f_max = float(f.get("f_max", 100.0))
         self._escalation = float(f.get("escalation", 1.5))
         self._test_lift = float(f.get("test_lift_height", 0.02))
         self._settle_time = float(f.get("settle_time", 0.5))

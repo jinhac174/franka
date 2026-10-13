@@ -53,9 +53,9 @@ def test_force_aware_grasp_weighs_object(procs, lcm_listener):
 
 
 def test_grasp_quality_model_matches_sim(tmp_path):
-    """Tutorial 11 (few grasps on the can): predicted vs simulated grip force."""
+    """Tutorial 11 (a few grasps on the bottle): predicted vs simulated grip force."""
     cfg = OmegaConf.load("configs/grasp_quality/default.yaml")
-    cfg.object_config, cfg.num_grasps = "configs/objects/tomato_soup_can.yaml", 5
+    cfg.num_grasps = 5
     path = tmp_path / "gq.yaml"
     OmegaConf.save(cfg, path)
     out = subprocess.run([sys.executable, "run_grasp_quality.py", "--config", str(path)],

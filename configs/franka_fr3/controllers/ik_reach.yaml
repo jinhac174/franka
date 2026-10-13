@@ -2,18 +2,19 @@ name: ik_reach
 ctrl_freq: 1000
 env_mode: sim_real_time
 
-# Pinocchio model: [arm(7), finger1, finger2]. Only the arm is commanded.
-urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+# Pinocchio model: the 7 arm joints (urdf/fr3_robotiq_rigid.urdf: the Robotiq
+# gripper is a rigid payload). The gripper goes through the gripper API.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
 mesh_path:
   path_1: assets/scene/franka_fr3/urdf
 
-num_joints: 9
+num_joints: 7
 num_arm_joints: 7
 num_ctrl_joints: 7
-default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
 
 # --- Pose IK sample (key 1): TCP SE(3) ---
-task_frame: fr3_hand_tcp
+task_frame: fr3_gripper_tcp
 ik_tol: 1.0e-4
 ik_max_iters: 200
 ik_damping: 1.0e-4
@@ -29,10 +30,10 @@ sample_seed: 0  # 0 => nondeterministic
 
 # PD tracking / hold: libfranka's joint-impedance example gains, the standard
 # safe starting point on the real FR3. Fingers 0 (not commanded).
-kp: [600, 600, 600, 600, 250, 150, 50, 0, 0]
-kd: [50, 50, 50, 20, 20, 20, 10, 0, 0]
+kp: [600, 600, 600, 600, 250, 150, 50]
+kd: [50, 50, 50, 20, 20, 20, 10]
 # Below the FR3 limits (2.62 rad/s for joints 1-4, 4.18-5.26 for 5-7).
-joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5, 0, 0]
+joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5]
 
 # Live gain / friction scales (Viser sliders override via LCM).
 kp_scale: 1.0
@@ -46,7 +47,7 @@ plant_gravity_comp: true
 # Fjc = the FR3 joint frictionloss in the MJCF; re-identify on hardware.
 do_friction_comp: true
 friction_phi: 0.01
-Fjc: [1.137, 1.137, 1.137, 1.137, 0.763, 0.44, 0.248, 0.0, 0.0]
+Fjc: [1.137, 1.137, 1.137, 1.137, 0.763, 0.44, 0.248]
 # Downsample status for Viser (~50 Hz at ctrl_freq=1000).
 status_publish_stride: 20
 
@@ -54,7 +55,7 @@ status_publish_stride: 20
 safty_dist_thr: 0.02
 col_link_names: ["fr3_link0", "fr3_link1", "fr3_link2", "fr3_link3", "fr3_link4",
                  "fr3_link5", "fr3_link5__2", "fr3_link6", "fr3_link7", "fr3_link7__2",
-                 "fr3_hand", "fr3_hand__2"]
+                 "fr3_gripper", "fr3_gripper__2"]
 obs_names: ["floor", "wall_back", "wall_left"]
 col_pairs:
   - ["fr3_link2", "wall_back"]
@@ -80,12 +81,12 @@ col_pairs:
   - ["fr3_link7__2", "wall_back"]
   - ["fr3_link7__2", "wall_left"]
   - ["fr3_link7__2", "floor"]
-  - ["fr3_hand", "wall_back"]
-  - ["fr3_hand", "wall_left"]
-  - ["fr3_hand", "floor"]
-  - ["fr3_hand__2", "wall_back"]
-  - ["fr3_hand__2", "wall_left"]
-  - ["fr3_hand__2", "floor"]
+  - ["fr3_gripper", "wall_back"]
+  - ["fr3_gripper", "wall_left"]
+  - ["fr3_gripper", "floor"]
+  - ["fr3_gripper__2", "wall_back"]
+  - ["fr3_gripper__2", "wall_left"]
+  - ["fr3_gripper__2", "floor"]
 # Self-collision: the pairs Franka's SRDF leaves enabled.
 self_col_pairs:
   - ["fr3_link5", "fr3_link0"]
@@ -93,25 +94,25 @@ self_col_pairs:
   - ["fr3_link6", "fr3_link0"]
   - ["fr3_link7", "fr3_link0"]
   - ["fr3_link7__2", "fr3_link0"]
-  - ["fr3_hand__2", "fr3_link0"]
-  - ["fr3_hand", "fr3_link0"]
+  - ["fr3_gripper__2", "fr3_link0"]
+  - ["fr3_gripper", "fr3_link0"]
   - ["fr3_link5", "fr3_link1"]
   - ["fr3_link5__2", "fr3_link1"]
   - ["fr3_link6", "fr3_link1"]
   - ["fr3_link7", "fr3_link1"]
   - ["fr3_link7__2", "fr3_link1"]
-  - ["fr3_hand__2", "fr3_link1"]
-  - ["fr3_hand", "fr3_link1"]
+  - ["fr3_gripper__2", "fr3_link1"]
+  - ["fr3_gripper", "fr3_link1"]
   - ["fr3_link5", "fr3_link2"]
   - ["fr3_link5__2", "fr3_link2"]
   - ["fr3_link7", "fr3_link2"]
   - ["fr3_link7__2", "fr3_link2"]
-  - ["fr3_hand__2", "fr3_link2"]
-  - ["fr3_hand", "fr3_link2"]
-  - ["fr3_hand__2", "fr3_link5"]
-  - ["fr3_hand", "fr3_link5"]
-  - ["fr3_hand__2", "fr3_link5__2"]
-  - ["fr3_hand", "fr3_link5__2"]
+  - ["fr3_gripper__2", "fr3_link2"]
+  - ["fr3_gripper", "fr3_link2"]
+  - ["fr3_gripper__2", "fr3_link5"]
+  - ["fr3_gripper", "fr3_link5"]
+  - ["fr3_gripper__2", "fr3_link5__2"]
+  - ["fr3_gripper", "fr3_link5__2"]
 
 # Reachability / collision reject loop.
 sample_joint_idx: [0, 1, 2, 3, 4, 5, 6]
@@ -136,14 +137,10 @@ dict_joints:
   arm:
     joint_meas_channel: franka_arm_joint_meas
     list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
-  gripper:
-    joint_meas_channel: franka_gripper_joint_meas
-    list_joint_idx: [7, 8]
 
 sub_manager:
   name: franka
   arm_joint_meas_channel: franka_arm_joint_meas
-  gripper_joint_meas_channel: franka_gripper_joint_meas
   static_col_info_channel: franka_static_col_info
   robot_col_info_channel: franka_robot_col_info
   gains_cmd_channel: franka_p2p_gains_cmd

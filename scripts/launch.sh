@@ -74,7 +74,7 @@ case "$TARGET" in
     else
       add "$PY run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml"
       add "$PY run_scene_info.py --config configs/franka_fr3/hardware/scene_info.yaml"
-      add "$PY run_sensors.py --config configs/sensors/realsense/one_realsense.yaml"
+      add "$PY run_sensors.py --config configs/sensors/zed/droid.yaml"
       add "$PY run_perception.py --config configs/franka_fr3/perception/foundation_pose_real.yaml"
     fi
     add "$PY run_pose_bridge.py --config configs/franka_fr3/perception/pose_bridge.yaml"

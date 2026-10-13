@@ -1,6 +1,6 @@
 package gripper;
 
-// Franka Hand state. Mirrors libfranka's GripperState plus command bookkeeping.
+// Gripper state (libfranka's GripperState fields) plus command bookkeeping.
 struct gripper_state_t
 {
     double timestamp;

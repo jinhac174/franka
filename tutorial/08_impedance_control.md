@@ -3,7 +3,7 @@
 Impedance control means: behave like a **spring–damper** relative to a nominal pose — compliant when pushed, restoring when released. This tutorial compares two ways to define that spring:
 
 1. **Per joint** (easy to implement, configuration-dependent in Cartesian space),
-2. **On the gripper’s SE(3) pose** at the tool centre point `fr3_hand_tcp` (geometric, natural for “hold this hand frame”).
+2. **On the gripper’s SE(3) pose** at the tool centre point `fr3_gripper_tcp` (geometric, natural for “hold this hand frame”).
 
 ---
 

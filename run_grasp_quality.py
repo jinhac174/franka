@@ -1,6 +1,6 @@
 """Parallel-jaw grasp quality: predicted vs simulated minimum grip force.
 
-Tutorial 11. A floating Franka Hand (no arm) grasps an object at sampled
+Tutorial 11. A floating Robotiq 2F-85 (no arm) grasps an object at sampled
 antipodal grasps. For each grasp the script compares
 
 * the grip force predicted by the soft-finger model
@@ -25,6 +25,7 @@ from omegaconf import OmegaConf
 from scipy.spatial.transform import Rotation
 
 from data_type.basic_types.GripperCmdData import GripperCmdData
+from robot_platform.gripper import robotiq_2f85 as rq
 from robot_platform.sim.franka_fr3.SimFrankaFR3 import GRIPPER_MAX_WIDTH, _GripperSim
 from utils.grasping.objects import GraspObject
 from utils.grasping.parallel_jaw import (
@@ -35,29 +36,31 @@ from utils.grasping.parallel_jaw import (
     sample_antipodal_grasps,
 )
 
-ROBOT_XML = "assets/scene/franka_fr3/fr3_hand_robot.xml"
+ROBOT_XML = "assets/scene/franka_fr3/fr3_robotiq_robot.xml"
 
 
 def build_hand_only_xml(robot_xml: str = ROBOT_XML) -> str:
-    """MJCF string: a free-floating Franka Hand from ``robot_xml`` that a
+    """MJCF string: a free-floating Robotiq 2F-85 from ``robot_xml`` that a
     weld constraint pulls toward a mocap target.
 
-    Copies the hand's defaults, assets, body subtree, finger tendon, equality
-    and gripper actuator, so the hand is identical to the one on the FR3.
+    Copies the gripper's defaults, assets, body subtree, contact excludes,
+    tendon, equality constraints and actuator, so it is identical to the one
+    on the FR3.
 
-    Why not put the hand directly on the mocap body? Moving a mocap body
+    Why not put the gripper directly on the mocap body? Moving a mocap body
     teleports it: it gets a new position but zero velocity, and MuJoCo's
     friction acts on velocities, so a lifted object would just stay behind.
-    The weld moves the hand dynamically, with real velocities.
+    The weld moves the gripper dynamically, with real velocities.
     """
     base = os.path.dirname(os.path.abspath(robot_xml))
     src = ET.parse(robot_xml).getroot()
-    hand = next(b for b in src.iter("body") if b.get("name") == "fr3_hand")
+    hand = next(b for b in src.iter("body") if b.get("name") == "fr3_gripper")
     hand = copy.deepcopy(hand)
     hand.set("pos", "0 0 0")
     hand.set("quat", "1 0 0 0")
+    bodies = {b.get("name") for b in hand.iter("body")}
 
-    root = ET.Element("mujoco", model="franka_hand_only")
+    root = ET.Element("mujoco", model="robotiq_2f85_only")
     ET.SubElement(root, "compiler", angle="radian", autolimits="true")
     # Elliptic friction cones match the model's friction cone. MuJoCo's
     # contacts are soft: under a steady load a held object slowly "creeps"
@@ -67,13 +70,13 @@ def build_hand_only_xml(robot_xml: str = ROBOT_XML) -> str:
                   cone="elliptic", impratio="10", noslip_iterations="5")
     default = ET.SubElement(root, "default")
     for d in src.find("default").findall("default"):
-        if d.get("class") == "hand":
+        if d.get("class") == "robotiq":
             default.append(copy.deepcopy(d))
     asset = ET.SubElement(root, "asset")
     for el in src.find("asset"):
-        if el.tag == "material" and el.get("name", "").startswith("hand_"):
+        if el.tag == "material" and el.get("name", "").startswith("robotiq_"):
             asset.append(copy.deepcopy(el))
-        if el.tag == "mesh" and "meshes/hand/" in el.get("file", ""):
+        if el.tag == "mesh" and "meshes/robotiq/" in el.get("file", ""):
             m = copy.deepcopy(el)
             m.set("file", os.path.join(base, el.get("file")))
             asset.append(m)
@@ -84,11 +87,11 @@ def build_hand_only_xml(robot_xml: str = ROBOT_XML) -> str:
     world.append(hand)
     contact = ET.SubElement(root, "contact")
     for ex in src.find("contact"):
-        if "fr3_hand" in (ex.get("body1"), ex.get("body2")):
+        if ex.get("body1") in bodies and ex.get("body2") in bodies:
             contact.append(copy.deepcopy(ex))
     root.append(copy.deepcopy(src.find("tendon")))
     equality = copy.deepcopy(src.find("equality"))
-    ET.SubElement(equality, "weld", body1="hand_target", body2="fr3_hand",
+    ET.SubElement(equality, "weld", body1="hand_target", body2="fr3_gripper",
                   solref="0.005 1")
     root.append(equality)
     act = ET.SubElement(root, "actuator")
@@ -99,7 +102,7 @@ def build_hand_only_xml(robot_xml: str = ROBOT_XML) -> str:
 
 
 class HandOnlySim:
-    """Floating Franka Hand + object, with the real gripper's move/grasp API."""
+    """Floating Robotiq 2F-85 + object, with the gripper's move/grasp API."""
 
     def __init__(self, obj: GraspObject):
         spec = mj.MjSpec.from_string(build_hand_only_xml())
@@ -110,17 +113,16 @@ class HandOnlySim:
         self.body = self.m.body("grasp_object").id
         self.qadr = int(self.m.jnt_qposadr[self.m.body_jntadr[self.body]])
         self.dadr = int(self.m.jnt_dofadr[self.m.body_jntadr[self.body]])
-        self.ten = self.m.tendon("gripper_width").id
         self.act = self.m.actuator("actuator_gripper").id
-        self.fingers = [self.m.joint(n).qposadr[0] for n in ("fr3_finger_joint1", "fr3_finger_joint2")]
-        self.hand = self.m.body("fr3_hand").id
+        self.hand = self.m.body("fr3_gripper").id
         self.hand_qadr = int(self.m.joint("hand_free").qposadr[0])
         self.gripper = _GripperSim(GRIPPER_MAX_WIDTH)
         self._seq = 0
+        self._prev_width = 0.0
 
     @property
     def width(self) -> float:
-        return float(self.d.ten_length[self.ten])
+        return rq.mj_width(self.m, self.d)
 
     def set_gravity(self, on: bool):
         self.m.opt.gravity[:] = (0.0, 0.0, -9.81) if on else (0.0, 0.0, 0.0)
@@ -131,14 +133,15 @@ class HandOnlySim:
         q = Rotation.from_matrix(T_world_obj[:3, :3]).as_quat()
         self.d.qpos[self.qadr : self.qadr + 3] = T_world_obj[:3, 3]
         self.d.qpos[self.qadr + 3 : self.qadr + 7] = [q[3], q[0], q[1], q[2]]
-        self.d.qpos[self.fingers] = 0.5 * open_width
+        rq.mj_set_width(self.m, self.d, open_width)
         self.set_hand(T_world_tcp)
         # Start the hand exactly at its target.
         self.d.qpos[self.hand_qadr : self.hand_qadr + 3] = self.d.mocap_pos[0]
         self.d.qpos[self.hand_qadr + 3 : self.hand_qadr + 7] = self.d.mocap_quat[0]
         self.gripper.reset(open_width)
-        self.d.ctrl[self.act] = open_width
         mj.mj_forward(self.m, self.d)
+        self._prev_width = self.width
+        rq.mj_actuate(self.m, self.d, self.act, open_width, _GripperSim.MOVE_FORCE, open_width)
 
     def set_hand(self, T_world_tcp: np.ndarray):
         # Hand frame = TCP frame moved back along the approach axis.
@@ -153,14 +156,18 @@ class HandOnlySim:
         c = GripperCmdData()
         c.set_data(self.d.time, self._seq, mode, width, speed, force, eps, eps)
         self.gripper.command(c, self.width)
+        if mode == GripperCmdData.GRASP:
+            # Analysis: also below the 2F-85's 20 N minimum, to find the
+            # physical minimum force (the real gripper cannot go that low).
+            self.gripper.force = float(force)
 
     def step(self, n: int = 1):
+        dt = self.m.opt.timestep
         for _ in range(n):
-            ref, cap = self.gripper.step(
-                self.width, float(self.d.ten_velocity[self.ten]), self.m.opt.timestep
-            )
-            self.d.ctrl[self.act] = ref
-            self.m.actuator_forcerange[self.act] = (-cap, cap)
+            w = self.width
+            ref, cap = self.gripper.step(w, (w - self._prev_width) / dt, dt)
+            self._prev_width = w
+            rq.mj_actuate(self.m, self.d, self.act, ref, cap, w)
             mj.mj_step(self.m, self.d)
 
     def object_in_hand(self) -> np.ndarray:
@@ -273,10 +280,16 @@ def main():
             T_w, width, com_world, obj.mass, cfg.mu, cfg.gamma, n1_world=n1, n2_world=n2
         )
         r_com = 1000.0 * np.linalg.norm(com_world - T_w[:3, 3])
-        lo, hi = cfg.f_min, cfg.f_max
+        # The 2F-85 model's springs already squeeze ~2 N with the motor off:
+        # the sim cannot test less than that.
+        lo, hi = max(cfg.f_min, rq.sim_min_squeeze(width)), cfg.f_max
         if not trial(sim, T_world_obj, T_w, width, hi, cfg, viewer)[0]:
             print(f"{k:2d} {width:6.3f} {cone_deg:5.1f} {r_com:5.0f}mm {det['tau_axis']:7.3f}Nm | "
                   f"{F_sq:8.1f} {F_pred:6.1f}   >{hi:.0f}  (not held even at max force)")
+            continue
+        if trial(sim, T_world_obj, T_w, width, lo, cfg, viewer)[0]:
+            print(f"{k:2d} {width:6.3f} {cone_deg:5.1f} {r_com:5.0f}mm {det['tau_axis']:7.3f}Nm | "
+                  f"{F_sq:8.1f} {F_pred:6.1f}  <={lo:3.1f}  (held at the sim's minimum squeeze)")
             continue
         for _ in range(cfg.bisection_steps):
             mid = 0.5 * (lo + hi)

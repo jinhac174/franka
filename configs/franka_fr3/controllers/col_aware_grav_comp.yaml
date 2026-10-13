@@ -2,27 +2,28 @@ name: col_aware_grav_comp
 ctrl_freq: 1000
 env_mode: sim_real_time
 
-# Pinocchio model: [arm(7), finger1, finger2]. Only the arm is commanded.
-urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+# Pinocchio model: the 7 arm joints (urdf/fr3_robotiq_rigid.urdf: the Robotiq
+# gripper is a rigid payload). The gripper goes through the gripper API.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
 mesh_path:
   path_1: assets/scene/franka_fr3/urdf
 
-num_joints: 9
+num_joints: 7
 num_arm_joints: 7
 num_ctrl_joints: 7
-default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
 
 # The FR3 (and the sim) compensates gravity itself: no g(q) in tau_ff.
 plant_gravity_comp: true
 arm_damping: 0.5
 
 # PD gains. Zeroed in the "grav_comp" (free-float) state; applied only when
-# repelling from an obstacle. Arm first 7, fingers last 2 (not commanded).
-kp: [200, 200, 200, 200, 60, 60, 20, 0, 0]
-kd: [20, 20, 20, 20, 6, 6, 2, 0, 0]
-kp_multiplier: [1, 1, 1, 1, 1, 1, 1, 1, 1]
+# repelling from an obstacle.
+kp: [200, 200, 200, 200, 60, 60, 20]
+kd: [20, 20, 20, 20, 6, 6, 2]
+kp_multiplier: [1, 1, 1, 1, 1, 1, 1]
 # Below the FR3 limits (2.62 rad/s for joints 1-4, 4.18-5.26 for 5-7).
-joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5, 0, 0]
+joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5]
 
 # Repulsive-field tuning: within margin_thr of safty_dist_thr, push away with a
 # velocity that grows to repulsive_coeff as the margin -> 0. Below safty_dist_thr
@@ -34,7 +35,7 @@ repulsive_coeff: 8
 # Robot collision primitives to check (names from the env's robot_col_info;
 # "<link>__2" is a second primitive on the same link frame).
 col_link_names: ["fr3_link2", "fr3_link3", "fr3_link4", "fr3_link5", "fr3_link5__2",
-                 "fr3_link6", "fr3_link7", "fr3_link7__2", "fr3_hand", "fr3_hand__2"]
+                 "fr3_link6", "fr3_link7", "fr3_link7__2", "fr3_gripper", "fr3_gripper__2"]
 # Static obstacle names (must match the env's static_col_info geoms = MJCF walls).
 obs_names: ["floor", "wall_back", "wall_left"]
 # link <-> obstacle pairs to distance-check each plan tick. fr3_link2 sits at
@@ -63,12 +64,12 @@ col_pairs:
   - ["fr3_link7__2", "wall_back"]
   - ["fr3_link7__2", "wall_left"]
   - ["fr3_link7__2", "floor"]
-  - ["fr3_hand", "wall_back"]
-  - ["fr3_hand", "wall_left"]
-  - ["fr3_hand", "floor"]
-  - ["fr3_hand__2", "wall_back"]
-  - ["fr3_hand__2", "wall_left"]
-  - ["fr3_hand__2", "floor"]
+  - ["fr3_gripper", "wall_back"]
+  - ["fr3_gripper", "wall_left"]
+  - ["fr3_gripper", "floor"]
+  - ["fr3_gripper__2", "wall_back"]
+  - ["fr3_gripper__2", "wall_left"]
+  - ["fr3_gripper__2", "floor"]
 
 plan_freq: 100
 plan_horizon: 0.1
@@ -77,14 +78,10 @@ dict_joints:
   arm:
     joint_meas_channel: franka_arm_joint_meas
     list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
-  gripper:
-    joint_meas_channel: franka_gripper_joint_meas
-    list_joint_idx: [7, 8]
 
 sub_manager:
   name: franka
   arm_joint_meas_channel: franka_arm_joint_meas
-  gripper_joint_meas_channel: franka_gripper_joint_meas
   static_col_info_channel: franka_static_col_info
   robot_col_info_channel: franka_robot_col_info
 

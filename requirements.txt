@@ -13,6 +13,10 @@ lcm==1.5.1
 # robot's libfranka version. The PyPI wheel bundles libfranka 0.9.2, which only
 # talks to the older Panda; FR3 wheels are on the panda-py GitHub releases.
 # panda-python
+# Robotiq 2F-85 gripper over its USB / RS-485 adapter (robot workstation only).
+# pyserial
+# ZED cameras (computer they are plugged into, perception only): install the
+# ZED SDK, then `python /usr/local/zed/get_python_api.py` in this env (pyzed).
 
 # mujoco simulations
 mujoco==3.3.1

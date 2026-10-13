@@ -55,7 +55,7 @@ def test_collision_info_and_col_aware_hold(procs, lcm_listener):
     static = set(lst.last["franka_static_col_info"].concat_names.split(","))
     robot = set(lst.last["franka_robot_col_info"].concat_names.split(","))
     assert {"floor", "wall_back", "wall_left"} <= static
-    assert {"fr3_link5__2", "fr3_hand", "fr3_hand__2"} <= robot
+    assert {"fr3_link5__2", "fr3_gripper", "fr3_gripper__2"} <= robot
 
     procs.start("ctrl", CTRL, f"{C}/col_aware_grav_comp.yaml")
     assert lst.wait_for(lambda: lst.count["franka_arm_joint_ctrl"] > 500, STARTUP)

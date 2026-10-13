@@ -35,7 +35,7 @@ publish_fixed_table: true
 # Subscriber configuration
 sub_manager:
   name: "single_rgbd"
-  rgbd_channel: "d455_1"
+  rgbd_channel: "zed_ext1"
 
 # Publisher configuration
 pub_manager:

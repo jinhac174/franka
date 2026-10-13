@@ -1,7 +1,9 @@
-"""_GripperSim: the simulator's copy of the Franka Hand's blocking
-move / grasp / stop / homing API (driven by the sim with the measured width)."""
+"""_GripperSim: the simulator's version of the gripper's move / grasp / stop /
+homing API (driven by the sim with the measured width), for the Robotiq 2F-85
+(0-85 mm, 20-235 N, 20-150 mm/s)."""
 
 from data_type.basic_types.GripperCmdData import GripperCmdData as G
+from robot_platform.gripper.robotiq_2f85 import MAX_WIDTH
 from robot_platform.sim.franka_fr3.SimFrankaFR3 import _GripperSim
 
 DT = 0.001
@@ -64,4 +66,13 @@ def test_homing_opens_fully():
     g = _GripperSim(0.02)
     g.command(cmd(6, G.HOMING), 0.02)
     w = run(g, 0.02, 1.5)
-    assert abs(w - 0.08) < 1e-3 and g.last_success
+    assert abs(w - MAX_WIDTH) < 1e-3 and g.last_success
+
+
+def test_force_and_speed_clamped_to_2f85_range():
+    """The 2F-85 squeezes with 20-235 N and moves at 20-150 mm/s."""
+    g = _GripperSim(0.08)
+    g.command(cmd(7, G.GRASP, 0.03, speed=1.0, force=500.0), 0.08)
+    assert g.force == 235.0 and g.speed == 0.15
+    g.command(cmd(8, G.GRASP, 0.03, speed=0.001, force=1.0), 0.08)
+    assert g.force == 20.0 and g.speed == 0.02

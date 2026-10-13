@@ -92,7 +92,7 @@ class BaseCtrlPubManager(BasePubManager):
 
     ``gripper_cmd_channel`` (optional): adds a gripper_cmd_t publisher fed by
     ``pub_que_dict[gripper_cmd_channel]``, so every controller pub manager can
-    drive the Franka Hand.
+    drive the gripper.
     """
 
     def __init__(self, *args, gripper_cmd_channel: str = "", **kwargs):

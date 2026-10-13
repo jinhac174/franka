@@ -2,12 +2,12 @@ from data_type.BaseData import BaseData
 
 
 class GripperStateData(BaseData):
-    """Franka Hand state (see lcm_type/lcm_type/gripper_state.lcm)."""
+    """Gripper state (see lcm_type/lcm_type/gripper_state.lcm)."""
 
     def __init__(self, name: str = "gripper_state_data"):
         super().__init__(name)
         self.width = 0.0
-        self.max_width = 0.08
+        self.max_width = 0.085  # Robotiq 2F-85
         self.is_grasped = False
         self.busy = False
         self.last_seq = -1

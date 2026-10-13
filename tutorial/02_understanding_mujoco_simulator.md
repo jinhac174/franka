@@ -44,7 +44,15 @@ $$
 q \in \mathbb{R}^{7}.
 $$
 
-The model files also include the two finger joints, so the full model (URDF / Pinocchio / MuJoCo) has $9$ coordinates: $[q_{\mathrm{arm}}(7),\, q_{\mathrm{finger1}},\, q_{\mathrm{finger2}}]$. Each finger coordinate is its distance from the center, so the gripper width is $q_{\mathrm{finger1}}+q_{\mathrm{finger2}}$ (0 to 8 cm).
+The gripper, a **Robotiq 2F-85**, is a linkage: on each side a driver, a spring link, a coupler and a follower carrying the pad, all following **one** coordinate, the driver angle (0 = open, about 0.785 rad = closed). The pads stay parallel and the opening (the width between the pad faces) goes from 85 mm to 0. Three models describe it:
+
+| Model | Used by | Gripper |
+|---|---|---|
+| MuJoCo `fr3_robotiq_robot.xml` | the simulator | the full linkage, closed by equality constraints, driven by one position servo |
+| `urdf/fr3_robotiq.urdf` | Viser | one joint, `robotiq_driver_joint`; the other links follow it (`<mimic>`) |
+| `urdf/fr3_robotiq_rigid.urdf` | the controllers (Pinocchio) | rigid and open: a payload on the flange, so $q$ is the 7 arm joints |
+
+`robot_platform/gripper/robotiq_2f85.py` converts between the driver angle and the width.
 
 Velocities are $\dot q$, accelerations $\ddot q$. MuJoCo advances $(q,\dot q)$ through time using the equations of motion below.
 
@@ -120,16 +128,16 @@ If the **plant** compensates gravity *and* the controller also sends $g(q)$ in $
 
 ### The gripper is a different kind of actuator
 
-The Franka Hand runs its own position controller with a force limit. You send it an action:
+The Robotiq 2F-85 runs its own position controller with a force limit (on the real robot it is driven over USB, Modbus RTU, as in DROID). You send it an action, in metres and newtons:
 
 | Action | Parameters | What happens |
 |--------|------------|--------------|
 | `MOVE` | width, speed | Fingers go to `width`. Reports failure if something blocks them. |
 | `GRASP` | width, speed, force, $\varepsilon_{\mathrm{in}}$, $\varepsilon_{\mathrm{out}}$ | Fingers close until they stop on something, then squeeze with `force`. Success if the final width is within $[\text{width}-\varepsilon_{\mathrm{in}},\ \text{width}+\varepsilon_{\mathrm{out}}]$. |
 | `STOP` | – | Stop the current action, release the squeeze. |
-| `HOMING` | – | Open fully (on the real hand this also calibrates the max width). |
+| `HOMING` | – | Activate and open fully (on the real gripper this also measures its open / closed positions). |
 
-The sim models the gripper as a MuJoCo position servo on the finger-width tendon with a per-action force cap, and runs the same action logic.
+Ranges: 0–85 mm, 20–150 mm/s, 20–235 N. The sim models the gripper as a MuJoCo position servo on the driver angle with a per-action force cap (converted from the squeeze force at the pads), and runs the same action logic.
 
 ### Contacts vs planning collision models
 
@@ -144,8 +152,8 @@ Separately, later tutorials publish **simple FCL shapes** for **planning** ([04]
 | Piece | Where to look | Why it matters |
 |-------|---------------|----------------|
 | Scene MJCF | `assets/scene/franka_fr3/scene_default.xml` | Floor, walls, lights; includes the robot |
-| Robot MJCF | `assets/scene/franka_fr3/fr3_hand_robot.xml` | Masses, damping, armature, friction, joint limits, actuators |
-| Robot URDF | `assets/scene/franka_fr3/urdf/fr3_hand.urdf` | The controller’s model (Pinocchio) and the visualizer’s; same kinematics as the MJCF |
+| Robot MJCF | `assets/scene/franka_fr3/fr3_robotiq_robot.xml` | Masses, damping, armature, friction, joint limits, actuators |
+| Robot URDF | `assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf` | The controller’s model (Pinocchio) and the visualizer’s; same kinematics as the MJCF |
 | Env base | `env/MujocoBaseEnv.py` | Step loop, real-time vs sim-time |
 | Platform | `robot_platform/sim/franka_fr3/SimFrankaFR3.py` | Maps `JointCtrl` → MuJoCo `ctrl`; gravity comp (`modify_mjspec`); gripper emulation (`_GripperSim`) |
 

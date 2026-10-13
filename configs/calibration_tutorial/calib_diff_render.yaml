@@ -3,17 +3,17 @@
 
 rgbd_channel: calib_camera
 arm_joint_meas_channel: franka_arm_joint_meas
-# The gripper's two finger joints complete the 9-joint URDF configuration.
+# The gripper joint (Robotiq driver angle) completes the 8-joint URDF configuration.
 hand_joint_meas_channel: franka_gripper_joint_meas
 
-num_joints: 9
+num_joints: 8
 num_arm_joints: 7
-num_hand_joints: 2
+num_hand_joints: 1
 
 # How many diverse configurations to capture (SPACE in the RGB window).
 num_captures: 2
 
-urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq.urdf
 # 0 = keep full visuals (no random face holes). Set >0 to quadric-decimate.
 max_faces: 0
 # Arm links only (fr3_link0..8): the gripper is small and its fingers move.

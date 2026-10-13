@@ -51,7 +51,7 @@ class SAM(BasePerception):
         self._initialized = False
 
         self._rgbd_channel = config.get("sub_manager", "single_rgbd").get(
-            "rgbd_channel", "d455_1"
+            "rgbd_channel", "zed_ext1"
         )
 
         self._visualize = config.get("visualize", False)

@@ -2,7 +2,7 @@
 
 Earlier we chased a **moving** gripper target with a velocity QP ([06](06_inverse_kinematics_quadratic_program.md)), and we tracked a **joint-space path** with PD ([07](07_computed_torque_control.md)). Here we do something in between:
 
-1. Sample a desired **gripper pose** (the TCP frame `fr3_hand_tcp`),
+1. Sample a desired **gripper pose** (the TCP frame `fr3_gripper_tcp`),
 2. Solve **arm-only** inverse kinematics offline with a collision check,
 3. Regulate the arm to that joint solution $q^\star$.
 
@@ -79,7 +79,7 @@ $$
 - Clamp joints to limits after each step.
 - Stop when $\|\xi\|<\varepsilon_{\mathrm{IK}}$ or you hit the iteration budget.
 
-The finger joints in $q^\star$ are simply copied from the current gripper width; they are not solved by CLIK (they belong to the gripper).
+$q^\star$ has only the 7 arm joints: the gripper is rigid in the controllers' model and keeps its own width (Viser draws it at the measured opening).
 
 The FR3 has 7 joints for a 6-D pose, so there are infinitely many solutions (the elbow can swing). Damped least squares started from the current $q$ picks one close to it.
 

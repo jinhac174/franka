@@ -1,15 +1,24 @@
-# Real FR3 + Franka Hand (run_hardware.py). Publishes / subscribes the same
+# Real FR3 + Robotiq 2F-85, the DROID setup (run_hardware.py). Publishes / subscribes the same
 # channels as configs/franka_fr3/env/*.yaml, so controllers run unchanged
 # (start them with --env_mode real).
 name: franka_fr3
 
 hardware_freq: 1000        # Hz this process updates the torque (panda-py holds it at 1 kHz)
-gripper_state_freq: 30     # Hz gripper state / finger joints are published
+gripper_state_freq: 30     # Hz gripper state / gripper joint are published (one Modbus read each)
 
 robot:
   backend: pandapy         # pandapy = the robot; fake = no robot (testing this process)
   hostname: 172.16.0.2     # FR3 control box (FCI) IP: set yours
   move_to_start: false     # true: libfranka's move_to_start() before torque control
+  # Desk > Settings > End effector: set the load to the gripper, 0.925 kg with
+  # its centre of mass 0.052 m along the flange z axis; the FR3's gravity
+  # compensation uses it.
+
+gripper:
+  backend: auto            # robotiq = the 2F-85 over USB (Modbus RTU); fake = simulated;
+                           # auto = robotiq, or fake together with --robot.backend fake
+  port: /dev/ttyUSB0       # its USB / RS-485 adapter on THIS computer (ls /dev/ttyUSB*)
+  activate_on_start: true  # activation closes and opens the fingers once: keep them clear
 
 safety:
   # Torque limits (Nm), at most the FR3 limits [87 x4, 12 x3].

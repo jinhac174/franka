@@ -1,5 +1,5 @@
 <mujoco model="franka_fr3_scene">
-  <include file="fr3_hand_robot.xml"/>
+  <include file="fr3_robotiq_robot.xml"/>
 
   <compiler angle="radian"/>
 

@@ -17,4 +17,8 @@ def get_sensor_manager(cfg_sensors: DictConfig) -> BaseSensorManager:
         from sensor.sensor_manager.RealSenseManager import RealSenseManager
 
         return RealSenseManager(cfg_sensors)
+    elif name == "zed":
+        from sensor.sensor_manager.ZEDManager import ZEDManager
+
+        return ZEDManager(cfg_sensors)
     raise ValueError(f"Unknown sensor manager name: {name}")

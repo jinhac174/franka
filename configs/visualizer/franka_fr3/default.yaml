@@ -7,9 +7,9 @@ franka_fr3:
   arm_joint_meas_channel: franka_arm_joint_meas
   gripper_joint_meas_channel: franka_gripper_joint_meas
   num_arm_joints: 7
-  num_finger_joints: 2
+  num_gripper_joints: 1   # the Robotiq driver angle
 
-  # FR3 + Franka Hand URDF (relative mesh paths, loads directly).
-  urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+  # FR3 + Robotiq 2F-85 URDF (articulated gripper, relative mesh paths).
+  urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq.urdf
   # Optional yourdfpy mesh_dir override; leave blank to use the URDF's own paths.
   mesh_dir: ""

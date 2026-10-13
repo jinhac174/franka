@@ -2,8 +2,9 @@
 
 Builds a Pinocchio model from a URDF and computes the joint torques required to
 hold against gravity at a given configuration, g(q) = pin.computeGeneralized-
-Gravity. For the Flexiv arm + Robotis hand this gives the arm's gravity-comp
-torque accounting for the mounted hand's mass at its current finger pose.
+Gravity. With a URDF whose gripper has joints, this accounts for the gripper's
+mass at its current finger pose (the controllers' fr3_robotiq_rigid.urdf
+treats the Robotiq 2F-85 as one rigid, open payload instead).
 
 The arm/hand measurement vectors are ordered by their joint-name lists (URDF
 actuated order); this class maps them to Pinocchio's internal q/v indices, so

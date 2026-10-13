@@ -70,13 +70,13 @@ sub_manager:
   rgbd_channels:
     # - upper_camera
     # - side_camera
-    # - d455_1
-    - d455_2
+    # - zed_ext1
+    - zed_ext2
   mask_channels:
     # - upper_camera_mask
     # - side_camera_mask
-    # - d455_1_mask
-    - d455_2_mask
+    # - zed_ext1_mask
+    - zed_ext2_mask
   max_sub_freq: 2000
 pub_manager:
   name: named_vec

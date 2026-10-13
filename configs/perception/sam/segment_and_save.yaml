@@ -19,7 +19,7 @@ visualize: True
 
 sub_manager:
   name: single_rgbd
-  rgbd_channel: d455_1
+  rgbd_channel: zed_ext1
   max_sub_freq: 2000
 pub_manager:
   name: point3d

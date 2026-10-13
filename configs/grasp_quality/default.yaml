@@ -2,7 +2,7 @@
 object_config: configs/objects/mustard_bottle.yaml
 
 # Contact model shared by the prediction and the sim (finger pads in
-# fr3_hand_robot.xml): sliding friction mu, torsional friction gamma (m).
+# fr3_robotiq_robot.xml): sliding friction mu, torsional friction gamma (m).
 mu: 0.8
 gamma: 0.008
 
@@ -26,5 +26,5 @@ slip_tol_deg: 5.0
 
 # Bisection on the grip force
 f_min: 0.5
-f_max: 70.0             # Franka Hand continuous grasp force
+f_max: 235.0            # Robotiq 2F-85 maximum grip force (its minimum is 20 N)
 bisection_steps: 10

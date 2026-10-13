@@ -2,22 +2,23 @@ name: force_aware_grasp
 ctrl_freq: 1000
 env_mode: sim_real_time
 
-# Pinocchio model: [arm(7), finger1, finger2]. Only the arm is commanded.
-urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+# Pinocchio model: the 7 arm joints (urdf/fr3_robotiq_rigid.urdf: the Robotiq
+# gripper is a rigid payload). The gripper goes through the gripper API.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
 mesh_path:
   path_1: assets/scene/franka_fr3/urdf
 
-num_joints: 9
+num_joints: 7
 num_ctrl_joints: 7
 # Home for key "h": Franka ready pose, gripper open.
-default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
 
 # The object to grasp (same file as the env's object_config): mesh for grasp
 # sampling, mass, and the upright orientation.
 object_config: configs/objects/mustard_bottle.yaml
 
 grasp:
-  # Contact model (same mu / gamma as the finger pads in fr3_hand_robot.xml).
+  # Contact model (same mu / gamma as the finger pads in fr3_robotiq_robot.xml).
   mu: 0.8
   gamma: 0.008
   # Candidate generation (startup)
@@ -86,8 +87,8 @@ force:
   # Grip force = safety_factor * model force for the estimated mass. Tutorial 11
   # found the model can under-predict tilted grasps by up to ~2.5x.
   safety_factor: 2.5
-  f_min: 5.0
-  f_max: 70.0              # Franka Hand continuous force
+  f_min: 20.0              # the Robotiq 2F-85 cannot squeeze softer
+  f_max: 100.0             # it can do 235 N; no need to crush things
   escalation: 1.5          # after losing the object, probe this much harder
   load_feedforward: true   # add J^T w_load so the arm does not sag
 
@@ -103,7 +104,7 @@ max_ref_err: 0.05
 max_plan_age: 0.2
 
 # Task-space point: the gripper's tool centre point (between the fingertips).
-task_link: fr3_hand_tcp
+task_link: fr3_gripper_tcp
 task_point_local: [0.0, 0.0, 0.0]
 
 # Contracting field: v* = vel_gain*(p_des-p) - cart_damping*p_dot, clipped.
@@ -141,7 +142,7 @@ target_step_max: 0.05
 # Velocity mode uses velocity_control_D_gain with kp=0.
 #
 # mean_mass_matrix_diag = diag(M(q)) from MuJoCo mj_fullM at the ready pose on
-# fr3_hand_robot.xml (rigid-body inertia + joint armature).
+# fr3_robotiq_robot.xml (rigid-body inertia + joint armature).
 # ---------------------------------------------------------------------------
 est_time_delay: 0.01
 mean_mass_matrix_diag: [0.7624, 1.829, 1.2239, 1.1964, 0.1171, 0.1262, 0.0759, 0.115, 0.115]
@@ -158,16 +159,16 @@ do_coriolis_comp: true
 # Fjc * sat(qd_des / phi) would then flip by +/-1.1 Nm: a stick-slip limit cycle.
 do_friction_comp: false
 friction_phi: 0.01
-Fjc: [1.137, 1.137, 1.137, 1.137, 0.763, 0.44, 0.248, 0.0, 0.0]
+Fjc: [1.137, 1.137, 1.137, 1.137, 0.763, 0.44, 0.248]
 
 # Below the FR3 limits (2.62 rad/s for joints 1-4, 4.18-5.26 for 5-7).
 # Fingers 0: they are not commanded by this controller.
-joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5, 0, 0]
+joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5]
 
 safty_dist_thr: 0.02
 
 col_link_names: ["fr3_link2", "fr3_link3", "fr3_link4", "fr3_link5", "fr3_link5__2",
-                 "fr3_link6", "fr3_link7", "fr3_link7__2", "fr3_hand", "fr3_hand__2"]
+                 "fr3_link6", "fr3_link7", "fr3_link7__2", "fr3_gripper", "fr3_gripper__2"]
 obs_names: ["floor", "wall_back", "wall_left"]
 col_pairs:
   - ["fr3_link2", "wall_back"]
@@ -193,25 +194,21 @@ col_pairs:
   - ["fr3_link7__2", "wall_back"]
   - ["fr3_link7__2", "wall_left"]
   - ["fr3_link7__2", "floor"]
-  - ["fr3_hand", "wall_back"]
-  - ["fr3_hand", "wall_left"]
-  - ["fr3_hand", "floor"]
-  - ["fr3_hand__2", "wall_back"]
-  - ["fr3_hand__2", "wall_left"]
-  - ["fr3_hand__2", "floor"]
+  - ["fr3_gripper", "wall_back"]
+  - ["fr3_gripper", "wall_left"]
+  - ["fr3_gripper", "floor"]
+  - ["fr3_gripper__2", "wall_back"]
+  - ["fr3_gripper__2", "wall_left"]
+  - ["fr3_gripper__2", "floor"]
 
 dict_joints:
   arm:
     joint_meas_channel: franka_arm_joint_meas
     list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
-  gripper:
-    joint_meas_channel: franka_gripper_joint_meas
-    list_joint_idx: [7, 8]
 
 sub_manager:
   name: franka
   arm_joint_meas_channel: franka_arm_joint_meas
-  gripper_joint_meas_channel: franka_gripper_joint_meas
   gripper_state_channel: franka_gripper_state
   static_col_info_channel: franka_static_col_info
   robot_col_info_channel: franka_robot_col_info

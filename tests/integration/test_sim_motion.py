@@ -68,7 +68,7 @@ def test_ik_reach_sample_solve_go(procs, lcm_listener):
     for _ in range(6):
         n = len(ctrl.log())
         ctrl.key("1")
-        m = _wait_log(ctrl, r"Sampled fr3_hand_tcp p=\[([^\]]+)\]", 30, n)
+        m = _wait_log(ctrl, r"Sampled fr3_gripper_tcp p=\[([^\]]+)\]", 30, n)
         p_goal = np.array([float(x) for x in m.group(1).split()])
         n = len(ctrl.log())
         ctrl.key("2")

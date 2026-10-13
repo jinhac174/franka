@@ -2,7 +2,7 @@ from data_type.BaseData import BaseData
 
 
 class GripperCmdData(BaseData):
-    """Franka Hand command (see lcm_type/lcm_type/gripper_cmd.lcm).
+    """Gripper command (see lcm_type/lcm_type/gripper_cmd.lcm).
 
     Mirrors the real gripper API: MOVE(width, speed), GRASP(width, speed,
     force, eps_inner, eps_outer), STOP, HOMING. ``seq`` must change for every

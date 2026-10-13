@@ -2,7 +2,7 @@
 
 Welcome to RoPhiTutorial. This first lesson is not about fancy control theory — it is about **how the pieces talk to each other**. Once you can start the simulation and see the robot move under a simple controller, every later tutorial reuses the same pattern.
 
-We use a **Franka Research 3 (FR3)** arm (7 joints) with a **Franka Hand** parallel gripper (2 coupled fingers), simulated in MuJoCo, controlled in a separate Python process, and visualized in Viser. The same processes and messages later drive the real FR3.
+We use a **Franka Research 3 (FR3)** arm (7 joints) with a **Robotiq 2F-85** parallel gripper (two fingers on one linkage, 0–85 mm; the DROID setup), simulated in MuJoCo, controlled in a separate Python process, and visualized in Viser. The same processes and messages later drive the real FR3.
 
 ---
 
@@ -55,7 +55,7 @@ You do not call the other process’s Python functions directly. You only exchan
 | Channel name | Message type | Who → whom | Meaning in plain words |
 |--------------|--------------|------------|------------------------|
 | `franka_arm_joint_meas` | `JointMeas` | env → controller & viz | Arm joint angles $q$, velocities $\dot q$, torques $\tau$ (7 each), 1000 Hz |
-| `franka_gripper_joint_meas` | `JointMeas` | env → controller & viz | The two finger positions (each = gripper width / 2), 100 Hz |
+| `franka_gripper_joint_meas` | `JointMeas` | env → viz | The gripper's driver angle (0 = open … 0.785 rad = closed), 100 Hz; Viser draws the finger linkage from it |
 | `franka_gripper_state` | `GripperState` | env → controller | Width, `is_grasped`, `busy`, result of the last gripper command |
 | `franka_arm_joint_ctrl` | `JointCtrl` | controller → env | What the 7 arm motors should do next (see below) |
 | `franka_gripper_cmd` | `GripperCmd` | controller → env | Gripper action: move / grasp / stop / homing |
@@ -75,7 +75,7 @@ $$
 
 You will learn what each means in [02](02_understanding_mujoco_simulator.md). For now: the env turns that message into motor torques.
 
-**Why is the gripper separate?** The arm is torque controlled at 1 kHz. The real Franka Hand is not: it only accepts high-level actions like “move to 4 cm at 0.1 m/s” or “grasp with 40 N”, which its own controller carries out. So the gripper gets its own command and state channels, and the sim reproduces exactly that behavior. Grasping tutorials ([10](10_reactive_grasping.md)+) use them.
+**Why is the gripper separate?** The arm is torque controlled at 1 kHz. The real Robotiq 2F-85 is not: it only accepts high-level actions like “move to 4 cm at 0.1 m/s” or “grasp with 40 N”, which its own controller carries out. So the gripper gets its own command and state channels, and the sim reproduces exactly that behavior. Grasping tutorials ([10](10_reactive_grasping.md)+) use them.
 
 Later tutorials add more channels (collision shapes, object poses, arrows). The **pattern** never changes: env publishes world state; controller publishes commands; visualizer listens.
 

@@ -82,9 +82,9 @@ class DiffBaseToCamCalibrator:
 
     def __init__(self, config: DictConfig):
         self.cfg = config
-        self.num_joints = int(config.get("num_joints", 27))
+        self.num_joints = int(config.get("num_joints", 8))
         self.num_arm = int(config.get("num_arm_joints", 7))
-        self.num_hand = int(config.get("num_hand_joints", 20))
+        self.num_hand = int(config.get("num_hand_joints", 1))
         self._stop = False
         self._prev_sigint = None
         self._prev_sigterm = None
@@ -120,7 +120,7 @@ class DiffBaseToCamCalibrator:
             exclude_prefixes = list(exclude_prefixes)
         self._fk = RobotMeshFK(
             urdf_path=config.get(
-                "urdf_path", "assets/scene/flexiv_arm/urdf/Rizon4_viser.urdf"
+                "urdf_path", "assets/scene/franka_fr3/urdf/fr3_robotiq.urdf"
             ),
             max_faces=int(config.get("max_faces", 0)),
             arm_only=bool(config.get("arm_only", True)),

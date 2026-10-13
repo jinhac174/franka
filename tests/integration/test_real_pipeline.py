@@ -41,14 +41,15 @@ def test_fake_hardware_scene_info_and_real_mode_controller(procs, lcm_listener):
     assert rate > 500, rate  # nominal 1 kHz
     assert np.max(np.abs(arm_q(lst) - q0)) < 0.05
 
-    # Gripper through the hardware process (fake hand).
+    # Gripper through the hardware process (fake Robotiq behind the Modbus driver).
     cmd = gripper_cmd_t()
     cmd.timestamp, cmd.seq, cmd.mode = time.time(), 3, GripperCmdData.MOVE
     cmd.width, cmd.speed, cmd.epsilon_inner, cmd.epsilon_outer = 0.05, 0.2, 0.005, 0.005
     lcm.LCM().publish("franka_gripper_cmd", cmd.encode())
     gs = lambda: lst.last.get("franka_gripper_state")  # noqa: E731
     assert lst.wait_for(lambda: gs() is not None and gs().last_seq == 3 and not gs().busy, 10)
-    assert gs().last_success and abs(gs().width - 0.05) < 1e-6
+    # the 2F-85 positions in 1/255 steps of its stroke (~0.4 mm)
+    assert gs().last_success and abs(gs().width - 0.05) < 1e-3
 
 
 def test_hardware_holds_when_controller_stops(procs, lcm_listener):

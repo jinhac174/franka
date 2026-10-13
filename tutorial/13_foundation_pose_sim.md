@@ -50,7 +50,7 @@ Each camera frame gives:
 
 - **RGB** — color image, shape $(H, W, 3)$.  
 - **Depth** — per-pixel distance along the camera’s optical axis (in sim,
-  meters; on many RealSense streams, millimeters × `depth_factor`).
+  meters; from the real ZED cameras, millimeters, with `depth_factor` 1000).
 
 With **intrinsics** $K$ (focal length, principal point) you can back-project a
 pixel $(u,v)$ with depth $Z$ into a 3D point in the **camera frame**:

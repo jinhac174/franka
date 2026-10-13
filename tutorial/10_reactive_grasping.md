@@ -1,6 +1,6 @@
 # Reactive parallel-jaw grasping
 
-This is the first “full story” grasping tutorial: the robot **chooses** where to grasp an object, **reaches** a safe pre-grasp pose, **approaches** in a straight line, closes the Franka Hand, and lifts — while the object can still be moved around until the fingers close.
+This is the first “full story” grasping tutorial: the robot **chooses** where to grasp an object, **reaches** a safe pre-grasp pose, **approaches** in a straight line, closes the Robotiq 2F-85, and lifts — while the object can still be moved around until the fingers close.
 
 If [06](06_inverse_kinematics_quadratic_program.md) was “the gripper chases a keyboard target,” this is “the gripper chases a grasp on a live object,” with care about **which** grasp and **how** to approach it.
 
@@ -42,7 +42,7 @@ Start all three processes, wait for `... candidate TCP poses for mustard_bottle`
 |------|------|-----|
 | **Control** | 1 kHz | Track a joint reference with stiff PD (see below) |
 | **Plan** | ~50–100 Hz | Select a grasp, IK, velocity fields, collision-aware QP |
-| **Gripper** | its own | `move` / `grasp` run to completion on the Franka Hand’s controller |
+| **Gripper** | its own | `move` / `grasp` run to completion on the gripper’s own controller |
 
 ### LCM
 
@@ -75,13 +75,13 @@ $$
 \angle(-n_1,\,a) \le \alpha,\qquad \angle(n_2,\,-a) \le \alpha,\qquad \alpha = c\cdot\arctan\mu ,
 $$
 
-with $c<1$ a safety margin. The width $\|p_2-p_1\|$ must also fit the 8 cm gripper.
+with $c<1$ a safety margin. The width $\|p_2-p_1\|$ must also fit the 85 mm gripper (with 1 cm to spare).
 
-Each pair becomes **several gripper poses**: the TCP sits at the midpoint, its $y$ axis (the finger closing direction) along $a$, and its $z$ axis (the approach direction) is swept around $a$ in 30° steps. Swapping the fingers (a 180° turn about $z$) gives the same grasp, so both are kept.
+Each pair becomes **several gripper poses**: the pad centres sit at the midpoint (the 2F-85's pads ride on an arc, so the TCP is shifted along $z$ by a few mm depending on the width: `robotiq_2f85.pad_z`), its $y$ axis (the finger closing direction) along $a$, and its $z$ axis (the approach direction) is swept around $a$ in 30° steps. Swapping the fingers (a 180° turn about $z$) gives the same grasp, so both are kept.
 
 Two more offline filters:
 
-- **The open hand must not hit the object** — at the grasp *and* along the straight approach from the pre-grasp (10 cm back along $z$). The check uses the object’s **convex hull**: that is what MuJoCo collides with, and it is conservative on a real object.
+- **The open gripper must not hit the object** (five boxes: body, two fingertips, two outer linkages; `parallel_jaw.hand_boxes`) — at the grasp *and* along the straight approach from the pre-grasp (10 cm back along $z$). The check uses the object’s **convex hull**: that is what MuJoCo collides with, and it is conservative on a real object.
 - **Required grip force** for each grasp, from the model of [11](11_grasp_quality.md).
 
 For the mustard bottle this leaves about 120 candidate poses.
@@ -129,7 +129,7 @@ The gripper closes only when **both** the planned pose and the **measured** TCP 
 
 ### Step 5 — Close and lift
 
-`grasp(width, speed=0.1, force=30 N, ε=±1 cm)` on the Franka Hand; it reports success if the fingers stop within the window. Then lift 15 cm. While lifting and holding, `is_grasped` is monitored; if it drops, open and start over.
+`grasp(width, speed=0.1, force=30 N, ε=±1 cm)` on the gripper (the 2F-85 squeezes with 20–235 N); it reports success if the fingers stop within the window. Then lift 15 cm. While lifting and holding, `is_grasped` is monitored; if it drops, open and start over.
 
 ### Control: track a reference, don’t just damp velocity
 
@@ -157,7 +157,7 @@ Safety nets: $q_{\mathrm{ref}}$ stays within 0.05 rad of $q$ (no wind-up when bl
 | `utils/grasping/parallel_jaw.py` | Antipodal sampling, TCP poses, hand collision check, grip-force model |
 | `utils/grasping/objects.py`, `configs/objects/*.yaml` | Object mesh, mass, upright orientation |
 | `env/MujocoGraspEnv.py` | Object in the scene, `o` re-placement, pose / physics publishing |
-| `robot_platform/sim/franka_fr3/SimFrankaFR3.py` (`_GripperSim`) | Franka Hand `move` / `grasp` emulation |
+| `robot_platform/sim/franka_fr3/SimFrankaFR3.py` (`_GripperSim`) | Gripper `move` / `grasp` emulation (the real 2F-85: `robot_platform/hardware/franka_fr3/robotiq.py`) |
 | `configs/franka_fr3/controllers/parallel_jaw_grasp.yaml` | All knobs (`grasp:` section) |
 
 **Try:** grasp the tomato soup can instead. Add `--object_config configs/objects/tomato_soup_can.yaml` to both the env and the controller command (and set `object_mesh_path: assets/object_mesh/0715_tomato_soup_can/mujoco_mesh.obj` in the visualizer YAML). The can is a plain cylinder, so far more grasps are valid (about 530 candidate poses instead of 120) and it is picked up from every test position.

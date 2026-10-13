@@ -19,15 +19,15 @@ Same keys as [10](10_reactive_grasping.md) (`v` start, `x` release, `o` move the
 ### What you should observe
 
 ```
-Grasping: width 0.057 m, force 30.0 N (model needs 3.8 N)
+Grasping: width 0.054 m, force 30.0 N (model needs 7.2 N)
 Test lift (6 cm): settling, then weighing...
-Weighed: m_est = 0.620 kg (env says 0.603 kg). Model needs 3.9 N -> re-grasp with 9.8 N (safety x2.5).
+Weighed: m_est = 0.519 kg (env says 0.603 kg). Model needs 6.2 N -> re-grasp with 20.0 N (safety x2.5).
 Lifted and holding. Press x to release.
 ```
 
-In testing, the estimated mass was within about ±12% of the true 0.603 kg, the re-grasp force 9–20 N depending on the grasp, and the gripper held its goal within **0.4–1.8 mm** — compared to 3–7 mm of sag in tutorial 10.
+The estimate is a rough scale (here 14% low; the test accepts ±25%). With the Robotiq 2F-85 the re-grasp force rarely goes below its **20 N minimum** for a bottle like this one (2.5 × 6.2 N = 15.5 N → 20 N): the weighing matters for heavier objects, where 2.5 × the model force exceeds 20 N, and for not crushing light ones with a fixed large force.
 
-**Try:** `--force.probe_force 3.0`. The probe grasp is too weak, the bottle slips out during the test lift, the gripper reports it, and the controller retries with 1.5× more force each time.
+**Try:** a heavier object (raise `mass` in `configs/objects/mustard_bottle.yaml`, e.g. to 2.0 kg) and watch the re-grasp force rise above 20 N.
 
 ---
 
@@ -46,7 +46,7 @@ where $g(q)$ is the arm’s own gravity (known from the model) and $w$ is the wr
 ### Weighing
 
 1. **Tare.** Just before closing (gripper empty, arm still): $\tau_{\mathrm{ext}}^{0} = \tau_J - g(q)$. This removes the model’s own error (e.g. the URDF and the real gripper differ by ~0.15 Nm).
-2. **Probe grasp** with a firm force (30 N) and lift **6 cm**. (With 2 cm the tall bottle, hanging slightly tilted, still touched the table, which carried most of its weight: the scale read ~0.)
+2. **Probe grasp** with a firm force (30 N; the 2F-85 cannot go below 20 N anyway) and lift **6 cm**. (With 2 cm the tall bottle, hanging slightly tilted, still touched the table, which carried most of its weight: the scale read ~0.)
 3. **Settle, average** $\tau_{\mathrm{ext}}$ for 0.5 s, and solve $\Delta\tau = J^\top w$ in least squares (7 equations, 6 unknowns). The mass is $m = w_{f_z}/g$.
 
 If the estimate is below 0.05 kg, the object did not come up (it slid out or stayed on the table): open, back off, and squeeze harder next time.

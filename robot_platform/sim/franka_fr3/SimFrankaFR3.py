@@ -1,4 +1,4 @@
-"""MuJoCo platform for the Franka Research 3 arm + Franka Hand."""
+"""MuJoCo platform for the Franka Research 3 arm + Robotiq 2F-85 gripper (DROID setup)."""
 
 from __future__ import annotations
 
@@ -12,16 +12,16 @@ from data_type.basic_types.GripperCmdData import GripperCmdData
 from data_type.basic_types.GripperStateData import GripperStateData
 from data_type.basic_types.JointCtrlData import JointCtrlData
 from data_type.basic_types.JointMeasData import JointMeasData
+from robot_platform.gripper import robotiq_2f85 as rq
 from robot_platform.sim.BaseSimPlatform import BaseSimPlatform
 
 NUM_ARM_JOINTS = 7
-NUM_FINGER_JOINTS = 2
+NUM_GRIPPER_JOINTS = 1  # the driver angle (rad); the linkage follows it
 
 ARM_JOINT_NAMES = [f"fr3_joint{i + 1}" for i in range(NUM_ARM_JOINTS)]
-FINGER_JOINT_NAMES = ["fr3_finger_joint1", "fr3_finger_joint2"]
+GRIPPER_JOINT_NAME = rq.DRIVER_JOINT  # URDF: robotiq_driver_joint
 ARM_ACTUATOR_NAMES = [f"motor_{n}" for n in ARM_JOINT_NAMES]
 GRIPPER_ACTUATOR_NAME = "actuator_gripper"
-GRIPPER_TENDON_NAME = "gripper_width"
 
 # Planning collision model: Franka's own self-collision capsules
 # (franka_description 2.9.0, xacro with_sc:=true safety_distance:=0), one row
@@ -29,7 +29,7 @@ GRIPPER_TENDON_NAME = "gripper_width"
 # link frame. Extra capsules on a link are named "<link>__<k>" (see
 # utils.fcl.getter.col_frame_name). Coarser than the meshes on purpose: fast
 # FCL distance queries for the controllers. The union covers every arm-link
-# collision-mesh vertex at any pose; see FR3_HAND_BOX for the hand.
+# collision-mesh vertex at any pose; see FR3_GRIPPER_BOXES for the gripper.
 FR3_COL_CAPSULES = [
     ("fr3_link0", 0.09, 0.03, (-0.075, 0.0, 0.06), (1.0, 0.0, 0.0)),
     ("fr3_link1", 0.09, 0.283, (0.0, 0.0, -0.1915), (0.0, 0.0, 1.0)),
@@ -41,14 +41,14 @@ FR3_COL_CAPSULES = [
     ("fr3_link6", 0.08, 0.08, (0.0, 0.0, -0.03), (0.0, 0.0, 1.0)),
     ("fr3_link7", 0.07, 0.14, (0.0, 0.0, 0.01), (0.0, 0.0, 1.0)),
     ("fr3_link7__2", 0.06, 0.01, (0.0424, 0.0424, 0.082), (0.7071, 0.7071, 0.0)),
-    # Finger region (Franka's second hand capsule).
-    ("fr3_hand__2", 0.02, 0.1, (0.0, 0.0, 0.1), (0.0, 1.0, 0.0)),
 ]
-# Hand body: Franka's own hand capsule leaves the square housing corners up to
-# 33 mm outside (it relies on a 3 cm safety inflation), which matters when
-# grasping near a table. Use a box fitted to the hand collision mesh instead:
-# (name, full extents, centre) in the fr3_hand frame.
-FR3_HAND_BOX = ("fr3_hand", (0.065, 0.21, 0.094), (0.0, -0.002, 0.02))
+# Robotiq 2F-85: (name, full extents, centre) in the fr3_gripper frame, fitted
+# to the gripper's collision meshes: its body, and the fingers fully open
+# (conservative when they close).
+FR3_GRIPPER_BOXES = [
+    ("fr3_gripper", (0.075, 0.085, 0.101), (0.0, 0.0, 0.0504)),
+    ("fr3_gripper__2", (0.040, 0.150, 0.105), (0.0, 0.0, 0.108)),
+]
 
 
 def _align_z_to(axis) -> np.ndarray:
@@ -65,7 +65,7 @@ def _align_z_to(axis) -> np.ndarray:
 
 
 def fr3_col_primitives():
-    """FR3 + hand planning primitives as ColInfoData.add_col_geom kwargs."""
+    """FR3 + gripper planning primitives as ColInfoData.add_col_geom kwargs."""
     prims = []
     for name, radius, length, centre, axis in FR3_COL_CAPSULES:
         offset = np.eye(4)
@@ -79,38 +79,40 @@ def fr3_col_primitives():
                 "offset": offset,
             }
         )
-    name, extents, centre = FR3_HAND_BOX
-    offset = np.eye(4)
-    offset[:3, 3] = centre
-    prims.append(
-        {
-            "name": name,
-            "geom_type": "box",
-            "size": np.array(extents),
-            "offset": offset,
-        }
-    )
+    for name, extents, centre in FR3_GRIPPER_BOXES:
+        offset = np.eye(4)
+        offset[:3, 3] = centre
+        prims.append(
+            {
+                "name": name,
+                "geom_type": "box",
+                "size": np.array(extents),
+                "offset": offset,
+            }
+        )
     return prims
 
 
 # Franka's standard "ready" pose (libfranka / franka_ros examples).
 FR3_HOME_Q = [0.0, -np.pi / 4, 0.0, -3 * np.pi / 4, 0.0, np.pi / 2, np.pi / 4]
-GRIPPER_MAX_WIDTH = 0.08
+GRIPPER_MAX_WIDTH = rq.MAX_WIDTH
 
 
 class _GripperSim:
-    """Emulates the Franka Hand's blocking move/grasp API.
+    """Emulates the gripper's move / grasp API (``gripper_cmd_t``).
 
-    The real gripper is not torque controlled: libfranka exposes
-    move(width, speed), grasp(width, speed, force, eps_in, eps_out), stop() and
-    homing(), each of which runs to completion on the gripper's own controller.
-    This class reproduces that on a MuJoCo position servo: each sim step it
-    returns a width set-point (ramped at the commanded speed) and a force cap.
-    A grasp drives the set-point fully closed, so contact -- not the set-point
-    -- stops the fingers, and the servo then saturates at the grasp force.
+    The gripper is not torque controlled: it takes a target, a speed and a
+    force and runs to completion on its own controller. The real 2F-85 does
+    it like this (see ``hardware/franka_fr3/robotiq.py``): a grasp closes
+    until an object stops the fingers ("object detected") and then keeps
+    squeezing with the set force. This class reproduces that on a MuJoCo
+    position servo: each sim step it returns a width set-point (ramped at the
+    commanded speed) and a squeeze-force cap. A grasp drives the set-point
+    fully closed, so contact -- not the set-point -- stops the fingers, and
+    the servo then saturates at the grasp force.
     """
 
-    MOVE_FORCE = 70.0  # force cap while moving / holding (N)
+    MOVE_FORCE = 70.0  # squeeze-force cap while moving / holding (N)
     # |width rate| below this counts as stopped (m/s). Soft contacts under a
     # strong squeeze keep creeping a few mm/s, so this cannot be ~0.
     STALL_SPEED = 5e-3
@@ -153,19 +155,19 @@ class _GripperSim:
             self._finish(True)
             return
         if mode == GripperCmdData.HOMING:
-            mode, cmd_width, speed = GripperCmdData.MOVE, self.max_width, 0.1
+            mode, cmd_width, speed = GripperCmdData.MOVE, self.max_width, rq.SPEED_RANGE[1]
         else:
             cmd_width, speed = cmd.width, cmd.speed
 
         self.mode = mode
         self.target = float(np.clip(cmd_width, 0.0, self.max_width))
-        self.speed = max(float(speed), 1e-3)
+        self.speed = float(np.clip(speed, *rq.SPEED_RANGE))
         self.eps_in = cmd.epsilon_inner
         self.eps_out = cmd.epsilon_outer
         if mode == GripperCmdData.GRASP:
             # Close (or open) all the way; the object stops the fingers.
             self.goal = 0.0 if self.target <= width else self.max_width
-            self.force = float(np.clip(cmd.force, 0.0, 140.0))
+            self.force = float(np.clip(cmd.force, *rq.FORCE_RANGE))
         else:
             self.goal = self.target
             self.force = self.MOVE_FORCE
@@ -215,7 +217,7 @@ class _GripperSim:
 
 
 class SimFrankaFR3(BaseSimPlatform):
-    """MuJoCo platform for the 7-DoF Franka Research 3 + Franka Hand.
+    """MuJoCo platform for the 7-DoF Franka Research 3 + Robotiq 2F-85.
 
     Arm (``ctrl_channel``, joint_ctrl_t with 7 joints)::
 
@@ -228,15 +230,16 @@ class SimFrankaFR3(BaseSimPlatform):
     ``gravity_comp: false`` turns it off so a controller can do it (tutorial 03).
 
     Gripper (``gripper_cmd_channel``, gripper_cmd_t): move / grasp / stop /
-    homing, emulated by ``_GripperSim``.
+    homing in metres and newtons, emulated by ``_GripperSim`` on the 2F-85
+    model (one position servo on the driver angle).
 
     Published:
       * ``arm_joint_meas_channel``     joint_meas_t (7)  q, qd, tau
         (tau = link-side joint torque, like the FR3 torque sensors / libfranka
         tau_J: motor torque incl. gravity comp, minus gear damping and
         friction. See ``_link_side_torque``.)
-      * ``gripper_joint_meas_channel`` joint_meas_t (2)  finger positions
-        (each = width / 2), so URDF/Pinocchio models see [arm(7), fingers(2)]
+      * ``gripper_joint_meas_channel`` joint_meas_t (1)  the driver angle
+        (rad), the one gripper joint of urdf/fr3_robotiq.urdf (for Viser)
       * ``gripper_state_channel``      gripper_state_t
     """
 
@@ -268,7 +271,7 @@ class SimFrankaFR3(BaseSimPlatform):
         self._gravity_comp = bool(gravity_comp)
 
         self.arm_joint_meas_data = JointMeasData(num_joints=NUM_ARM_JOINTS)
-        self.gripper_joint_meas_data = JointMeasData(num_joints=NUM_FINGER_JOINTS)
+        self.gripper_joint_meas_data = JointMeasData(num_joints=NUM_GRIPPER_JOINTS)
         self.gripper_state_data = GripperStateData()
         self._last_ctrl_data = JointCtrlData(num_joints=NUM_ARM_JOINTS)
         self._ever_received_ctrl = False
@@ -289,11 +292,12 @@ class SimFrankaFR3(BaseSimPlatform):
 
         self._arm_qpos_idx = []
         self._arm_dof_idx = []
-        self._finger_qpos_idx = []
-        self._finger_dof_idx = []
+        self._gripper_qpos_idx = -1
+        self._gripper_dof_idx = -1
+
         self._arm_act_idx = []
         self._gripper_act_idx = -1
-        self._gripper_tendon_idx = -1
+        self._prev_width = None
 
     # ------------------------------------------------------------------
     # Model setup
@@ -316,13 +320,11 @@ class SimFrankaFR3(BaseSimPlatform):
             j = model.joint(name)
             self._arm_qpos_idx.append(int(j.qposadr[0]))
             self._arm_dof_idx.append(int(j.dofadr[0]))
-        for name in FINGER_JOINT_NAMES:
-            j = model.joint(name)
-            self._finger_qpos_idx.append(int(j.qposadr[0]))
-            self._finger_dof_idx.append(int(j.dofadr[0]))
+        j = model.joint(GRIPPER_JOINT_NAME)
+        self._gripper_qpos_idx, self._gripper_dof_idx = int(j.qposadr[0]), int(j.dofadr[0])
+
         self._arm_act_idx = [model.actuator(n).id for n in ARM_ACTUATOR_NAMES]
         self._gripper_act_idx = model.actuator(GRIPPER_ACTUATOR_NAME).id
-        self._gripper_tendon_idx = model.tendon(GRIPPER_TENDON_NAME).id
 
     def set_sub_que_dict(self, que_dict: dict):
         self._gripper_cmd_que = que_dict.get("intr_sub_que_dict", {}).get(
@@ -355,18 +357,23 @@ class SimFrankaFR3(BaseSimPlatform):
 
         self._apply_gripper_control(mj_data)
 
+    def _width(self, mj_data: mj.MjData) -> float:
+        return rq.mj_width(mj_data.model, mj_data)
+
     def _apply_gripper_control(self, mj_data: mj.MjData):
-        width = float(mj_data.ten_length[self._gripper_tendon_idx])
+        model = mj_data.model
+        dt = float(model.opt.timestep)
+        width = self._width(mj_data)
         if self._gripper_cmd_que is not None:
             while not self._gripper_cmd_que.empty():
                 self._gripper.command(self._gripper_cmd_que.get_nowait(), width)
-        width_rate = float(mj_data.ten_velocity[self._gripper_tendon_idx])
-        model = mj_data.model
-        width_ref, force_cap = self._gripper.step(
-            width, width_rate, float(model.opt.timestep)
-        )
-        mj_data.ctrl[self._gripper_act_idx] = width_ref
-        model.actuator_forcerange[self._gripper_act_idx] = (-force_cap, force_cap)
+        prev = width if self._prev_width is None else self._prev_width
+        width_rate = (width - prev) / dt
+        self._prev_width = width
+        width_ref, force_cap = self._gripper.step(width, width_rate, dt)
+        # Width set-point -> driver-angle set-point; squeeze-force cap ->
+        # actuator force cap (the linkage's force ratio depends on the width).
+        rq.mj_actuate(model, mj_data, self._gripper_act_idx, width_ref, force_cap, width)
 
     # ------------------------------------------------------------------
     # Measurements
@@ -410,10 +417,10 @@ class SimFrankaFR3(BaseSimPlatform):
             )
 
         if self._due(self._finger_ch, t):
-            idx = self._finger_dof_idx
+            idx = [self._gripper_dof_idx]
             self.gripper_joint_meas_data.set_data(
                 t,
-                mj_data.qpos[self._finger_qpos_idx],
+                mj_data.qpos[[self._gripper_qpos_idx]],
                 mj_data.qvel[idx],
                 mj_data.qfrc_actuator[idx],
             )
@@ -422,7 +429,7 @@ class SimFrankaFR3(BaseSimPlatform):
             )
 
         if self._gstate_ch in intr_pub_que_dict and self._due(self._gstate_ch, t):
-            width = float(mj_data.ten_length[self._gripper_tendon_idx])
+            width = self._width(mj_data)
             g = self._gripper
             self.gripper_state_data.set_data(
                 t,
@@ -454,15 +461,15 @@ class SimFrankaFR3(BaseSimPlatform):
             np.array([50.0, 50.0, 50.0, 20.0, 20.0, 20.0, 10.0]),
         )
         self.arm_joint_meas_data.set_q(self._default_q)
-        half = self._default_width / 2.0
-        self.gripper_joint_meas_data.set_q(np.array([half, half]))
+        angle = float(rq.angle_from_width(self._default_width))
+        self.gripper_joint_meas_data.set_q(np.array([angle]))
 
         mj_data.qpos[self._arm_qpos_idx] = self._default_q
-        mj_data.qpos[self._finger_qpos_idx] = half
+        rq.mj_set_width(mj_data.model, mj_data, self._default_width)  # whole linkage
         mj_data.qvel[self._arm_dof_idx] = 0.0
-        mj_data.qvel[self._finger_dof_idx] = 0.0
         mj_data.ctrl[:] = 0.0
-        mj_data.ctrl[self._gripper_act_idx] = self._default_width
+        mj_data.ctrl[self._gripper_act_idx] = angle
+        self._prev_width = None
         self._gripper.reset(self._default_width)
 
         for ch in self._last_pub_time:

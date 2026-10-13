@@ -2,25 +2,26 @@ name: impedance
 ctrl_freq: 1000
 env_mode: sim_real_time
 
-# Pinocchio model: [arm(7), finger1, finger2]. Only the arm is commanded.
-urdf_path: assets/scene/franka_fr3/urdf/fr3_hand.urdf
+# Pinocchio model: the 7 arm joints (urdf/fr3_robotiq_rigid.urdf: the Robotiq
+# gripper is a rigid payload). The gripper goes through the gripper API.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
 mesh_path:
   path_1: assets/scene/franka_fr3/urdf
 
-num_joints: 9
+num_joints: 7
 num_arm_joints: 7
 num_ctrl_joints: 7
-task_frame: fr3_hand_tcp
+task_frame: fr3_gripper_tcp
 mode: joint  # start in joint impedance; press `t` for SE(3) task
 
 # Nominal configuration (task nominal = FK(task_frame, default_q)).
-default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982, 0.04, 0.04]
+default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
 
 # Joint-space impedance: τ = Kq (q_nom − q) − Dq q̇.
 # libfranka's joint-impedance example gains (safe on the real FR3).
 # Fingers 0: they belong to the gripper API.
-kq: [600, 600, 600, 600, 250, 150, 50, 0, 0]
-dq: [50, 50, 50, 20, 20, 20, 10, 0, 0]
+kq: [600, 600, 600, 600, 250, 150, 50]
+dq: [50, 50, 50, 20, 20, 20, 10]
 kq_scale: 1.0
 dq_scale: 1.0
 
@@ -47,14 +48,10 @@ dict_joints:
   arm:
     joint_meas_channel: franka_arm_joint_meas
     list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
-  gripper:
-    joint_meas_channel: franka_gripper_joint_meas
-    list_joint_idx: [7, 8]
 
 sub_manager:
   name: franka
   arm_joint_meas_channel: franka_arm_joint_meas
-  gripper_joint_meas_channel: franka_gripper_joint_meas
   gains_cmd_channel: franka_imp_gains_cmd
   gains_cmd_type: imp
 

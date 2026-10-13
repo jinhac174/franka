@@ -1,0 +1,67 @@
+# The DROID cameras: two ZED 2 on the sides of the table + a ZED Mini on the
+# wrist (run_sensors.py, on the computer they are plugged into; needs the ZED
+# SDK + pyzed). Find the serials with the ZED SDK's ZED_Explorer --all
+# (or on the camera's label).
+#
+# Each camera publishes RGB-D on its channel (RGB uint8, depth uint16 in mm)
+# and camera info on <channel>_info: the intrinsics are read from the camera,
+# the extrinsics (tf_link_to_cam) come from here.
+name: zed
+num_sensors: 3
+info_pub_freq: 30
+
+zed:
+  ext1:
+    serial: 0              # SET: ZED 2, left side of the table
+    resolution: HD720      # capture mode: HD2K / HD1080 / HD720 / VGA
+    width: 640             # published size (0 = native 1280x720); 640x360 keeps
+    height: 360            #   the image messages small and FoundationPose fast
+    frequency: 30
+    depth_mode: NEURAL     # NEURAL / ULTRA / QUALITY / PERFORMANCE
+    fixed: true
+    attached_body: world
+    # Camera pose in the robot base frame (OpenCV camera axes: x right, y
+    # down, z forward). Placeholder: calibrate it (tutorial 14 or AprilTags)
+    # and paste the result here.
+    tf_link_to_cam:
+      quaternion: [0.0, 0.0, 0.0, 1.0]   # x, y, z, w
+      translation: [0.0, 0.0, 0.0]
+  ext2:
+    serial: 0              # SET: ZED 2, right side of the table
+    resolution: HD720
+    width: 640
+    height: 360
+    frequency: 30
+    depth_mode: NEURAL
+    fixed: true
+    attached_body: world
+    tf_link_to_cam:
+      quaternion: [0.0, 0.0, 0.0, 1.0]
+      translation: [0.0, 0.0, 0.0]
+  wrist:
+    serial: 0              # SET: ZED Mini on the wrist
+    resolution: HD720
+    width: 640
+    height: 360
+    frequency: 30
+    depth_mode: NEURAL
+    min_depth_mm: 100      # the ZED Mini sees closer than the ZED 2
+    # Moves with the arm: its pose = FK(fr3_link8) @ tf_link_to_cam. The
+    # perception pipeline here uses one fixed camera (ext1); nothing uses the
+    # wrist camera's pose yet.
+    fixed: false
+    attached_body: fr3_link8
+    tf_link_to_cam:
+      quaternion: [0.0, 0.0, 0.0, 1.0]
+      translation: [0.0, 0.0, 0.0]
+
+pub_manager:
+  name: zed
+  zed:
+    ext1_channel: zed_ext1
+    ext2_channel: zed_ext2
+    wrist_channel: zed_wrist
+  max_pub_freq: 100
+sub_manager:
+  name: base
+  max_sub_freq: 100

@@ -51,7 +51,7 @@ Run the env as in **A** but the controller as in **B** (`--plant_gravity_comp fa
 | Channel | Direction | Role here |
 |---------|-----------|-----------|
 | `franka_arm_joint_meas` | env → ctrl | Arm $q,\dot q$ |
-| `franka_gripper_joint_meas` | env → ctrl | Finger positions (completes the 9-joint model for Pinocchio) |
+| `franka_gripper_joint_meas` | env → viz | Gripper driver angle (Viser draws the fingers; the controller's model has the gripper rigid) |
 | `franka_arm_joint_ctrl` | ctrl → env | A: $\tau_{\mathrm{ff}}=-B\dot q$. B: $\tau_{\mathrm{ff}}=g(q)-B\dot q$. Always $K_p=K_d=0$ |
 
 ---

@@ -1,6 +1,6 @@
 # Inverse kinematics as a quadratic program
 
-Goal: move a **point on the robot** (here the gripper’s tool centre point, `fr3_hand_tcp`, between the fingertips) toward a target you drive with the keyboard — while **not** driving through walls.
+Goal: move a **point on the robot** (here the gripper’s tool centre point, `fr3_gripper_tcp`, between the pads) toward a target you drive with the keyboard — while **not** driving through walls.
 
 This is the first tutorial where “desired Cartesian velocity” becomes a **joint velocity** through an optimizer (OSQP).
 
@@ -116,7 +116,7 @@ $$
 
 **Try:** set `friction_phi: 0.03` or halve `Fjc`, press `h`, and watch joints 2 and 6 stall a few hundredths of a radian from home. On the real robot the friction values must be identified again — the MuJoCo numbers are only a starting point.
 
-The model has 9 joints (arm + fingers). The finger velocities are fixed to 0 in the QP; only the 7 arm joints are commanded.
+The model has the 7 arm joints (the gripper is a rigid payload in the controllers' URDF); all 7 are commanded.
 
 ---
 

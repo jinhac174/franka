@@ -90,7 +90,7 @@ $$
 
 with joint speed and position limits and linearized “do not decrease distance too fast” constraints. The solution is the plan’s $\dot q_{\mathrm{des}}$.
 
-The model has 9 joints (7 arm + 2 fingers), but the fingers belong to the gripper, not to this controller. Their velocities are fixed to $0$ in the QP, and only the 7 arm joints are commanded.
+The model has the 7 arm joints: the controllers load `urdf/fr3_robotiq_rigid.urdf`, where the gripper is a rigid payload. The fingers belong to the gripper API, not to this controller.
 
 ### Step E — Fast tracking
 

@@ -10,7 +10,8 @@ Checks (FAIL = will not work, WARN = may work badly):
     state (no motion, no torque control)
   * LCM: multicast route and UDP receive buffer (camera images are large)
   * hardware config (hostname, safety limits within the FR3 limits)
-  * optional: Franka Hand, RealSense, GPU for FoundationPose
+  * gripper: the Robotiq 2F-85's USB port (with --connect: reads its status)
+  * optional: ZED cameras, GPU for FoundationPose
 """
 
 from __future__ import annotations
@@ -94,20 +95,39 @@ def check_robot(hostname, connect):
         return
     try:
         import panda_py
-        from panda_py import libfranka
 
         panda = panda_py.Panda(hostname)
         st = panda.get_state()
         report("OK", "panda-py connect", f"q = {[round(x, 3) for x in st.q]}")
-        try:
-            g = libfranka.Gripper(hostname)
-            gs = g.read_once()
-            report("OK", "Franka Hand", f"width {gs.width:.4f} / max {gs.max_width:.4f} m")
-        except Exception as e:  # noqa: BLE001
-            report("WARN", "Franka Hand", str(e))
     except Exception as e:  # noqa: BLE001
         report("FAIL", "panda-py connect",
                f"{e}  (Desk: joints unlocked? FCI activated? Single point of control?)")
+
+
+def check_gripper(port, connect):
+    """Robotiq 2F-85 on its USB / RS-485 adapter (Modbus RTU)."""
+    if not os.path.exists(port):
+        report("FAIL", "Robotiq port", f"{port} missing: USB plugged in? ls /dev/ttyUSB*")
+        return
+    if not os.access(port, os.R_OK | os.W_OK):
+        report("FAIL", "Robotiq port", f"no access to {port}: sudo usermod -aG dialout $USER (log in again)")
+        return
+    report("OK", "Robotiq port", port)
+    try:
+        import serial  # noqa: F401
+    except ImportError:
+        report("FAIL", "pyserial", "pip install pyserial (the Robotiq driver needs it)")
+        return
+    if not connect:
+        return
+    try:
+        from robot_platform.hardware.franka_fr3.robotiq import RobotiqGripper
+
+        s = RobotiqGripper(port).status()
+        report("OK" if not s["fault"] else "WARN", "Robotiq status",
+               f"activated {s['sta'] == 3}, position {s['pos']}/255, fault 0x{s['fault']:X}")
+    except Exception as e:  # noqa: BLE001
+        report("FAIL", "Robotiq status", f"{e}  (power on? red light = needs activation, fine)")
 
 
 def check_lcm():
@@ -161,14 +181,21 @@ def check_config(path, hostname_arg):
     return host
 
 
+def cfg_gripper_port(path):
+    from omegaconf import OmegaConf
+
+    return OmegaConf.load(path).get("gripper", {}).get("port", "/dev/ttyUSB0")
+
+
 def check_optional():
     try:
-        import pyrealsense2 as rs
+        import pyzed.sl as sl
 
-        devs = [d.get_info(rs.camera_info.serial_number) for d in rs.context().query_devices()]
-        report("OK" if devs else "WARN", "RealSense", f"devices {devs}" if devs else "none connected")
+        devs = [d.serial_number for d in sl.Camera.get_device_list()]
+        report("OK" if devs else "WARN", "ZED cameras",
+               f"serials {devs} (put them in configs/sensors/zed/droid.yaml)" if devs else "none connected")
     except Exception:  # noqa: BLE001
-        report("INFO", "RealSense", "pyrealsense2 not installed (only needed for perception)")
+        report("INFO", "ZED cameras", "pyzed not installed (ZED SDK; only needed for perception)")
     try:
         import torch
 
@@ -189,6 +216,7 @@ def main():
     print("== robot software"); has_pp = check_panda_py()
     print("== config"); host = check_config(args.config, args.hostname)
     print("== robot"); check_robot(host, args.connect and has_pp)
+    print("== gripper"); check_gripper(str(cfg_gripper_port(args.config)), args.connect)
     print("== communication"); check_lcm()
     print("== optional"); check_optional()
 

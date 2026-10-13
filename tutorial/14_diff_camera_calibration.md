@@ -163,7 +163,7 @@ Follow the install steps in tutorial 13 (`nvdiffrast` with matching CUDA, and
 ## 2. Run (three terminals)
 
 ```bash
-# Terminal 1 — FR3 + Franka Hand + calib_camera RGB-D
+# Terminal 1 — FR3 + Robotiq 2F-85 + calib_camera RGB-D
 python run_env.py --config configs/calibration_tutorial/env/franka_cam.yaml
 
 # Terminal 2 — gravity compensation (free float / drag in MuJoCo)
@@ -202,7 +202,7 @@ collapsing. On the real FR3 you would do the same by hand-guiding the arm.
 | `calib_camera` | env → calib | RGB-D images |
 | `calib_camera_info` | env → calib | Intrinsics $K$ + GT OpenCV `T_world2cam` (for scoring only) |
 | `franka_arm_joint_meas` | env → ctrl / calib | 7-DoF arm $q,\dot q,\tau$ |
-| `franka_gripper_joint_meas` | env → ctrl / calib | The 2 finger joints (complete the 9-joint URDF configuration) |
+| `franka_gripper_joint_meas` | env → calib | The gripper's driver angle (completes the 8-joint URDF configuration) |
 | `franka_arm_joint_ctrl` | **grav-comp → env** | Damping only, $K_p=K_d=0$ (the FR3 cancels gravity itself) |
 
 The calibration script **subscribes** to camera + joints and does **not**
@@ -296,7 +296,7 @@ This is complementary to the classical checkerboard hand–eye path in
 |------|------|
 | [`assets/scene/franka_fr3/scene_cam_calib.xml`](../assets/scene/franka_fr3/scene_cam_calib.xml) | FR3 scene with `calib_camera` |
 | [`env/MujocoCamEnv.py`](../env/MujocoCamEnv.py) | Env: joints + RGB-D publish |
-| [`communication/.../FrankaPubManager.py`](../communication/lcm/publisher/pub_manager/env/franka_fr3/FrankaPubManager.py) | LCM pub: arm/finger meas + camera (`camera_channels`) |
+| [`communication/.../FrankaPubManager.py`](../communication/lcm/publisher/pub_manager/env/franka_fr3/FrankaPubManager.py) | LCM pub: arm / gripper meas + camera (`camera_channels`) |
 | [`configs/calibration_tutorial/env/franka_cam.yaml`](../configs/calibration_tutorial/env/franka_cam.yaml) | Env config |
 | [`configs/calibration_tutorial/controllers/grav_comp.yaml`](../configs/calibration_tutorial/controllers/grav_comp.yaml) | Free-pose gravity compensation |
 | [`configs/calibration_tutorial/calib_diff_render.yaml`](../configs/calibration_tutorial/calib_diff_render.yaml) | Captures / opt / SAM2 / `arm_only` |

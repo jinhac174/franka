@@ -161,7 +161,8 @@ def test_gripper_command_roundtrip(hw):
         if last is not None and last.last_seq == 7:
             break
         time.sleep(0.02)
-    assert last is not None and last.last_seq == 7 and abs(last.width - 0.07) < 1e-9
+    # the 2F-85 positions in 1/255 steps of its stroke (~0.4 mm)
+    assert last is not None and last.last_seq == 7 and abs(last.width - 0.07) < 1e-3
 
 
 def test_shutdown_is_idempotent(hw):

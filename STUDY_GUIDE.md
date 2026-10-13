@@ -23,8 +23,8 @@ There is no ROS in this repo: processes talk over LCM.
 | ☐ | 0 | Setup and viewing | (none) | SSH tunnel, the browser view (Viser), tmux, `scripts/lcm_echo.py` |
 | ☐ | 1 | Messages | `lcm_type/lcm_type/{joint_meas_data,joint_ctrl_data,gripper_cmd,gripper_state,clock}.lcm`, `lcm_type/joint/joint_meas_t.py`, `data_type/BaseData.py`, `data_type/basic_types/{JointMeasData,JointCtrlData}.py` | What travels between programs; wire format vs in-program objects |
 | ☐ | 2 | Communication layer | `communication/lcm/subscriber/{BaseDataSubscriber,BaseSubManager}.py`, `.../data_subscriber/JointMeasSubscriber.py`, `.../sub_manager/controller/FrankaSubManager.py`, `communication/lcm/publisher/{BaseDataPublisher,BasePubManager}.py`, `.../data_publisher/JointCtrlPublisher.py`, `.../pub_manager/controller/JointCtrlPubManager.py` | Threads, queues, latest wins, YAML channel → subscription |
-| ☐ | 3 | Robot model files | `assets/scene/franka_fr3/fr3_hand_robot.xml`, `scene_default.xml`, `urdf/fr3_hand.urdf` (skim) | MuJoCo XML (bodies, joints, actuators, geoms); why a URDF too (Pinocchio) |
-| ☐ | 4 | Simulator side | `run_env.py`, `env/__init__.py`, `env/BaseEnv.py`, `env/MujocoBaseEnv.py`, `robot_platform/sim/franka_fr3/SimFrankaFR3.py`, env sub/pub managers, `configs/franka_fr3/env/default.yaml` | Physics step, time modes, command law, plant gravity comp, simulated hand, measured torque |
+| ☐ | 3 | Robot model files | `assets/scene/franka_fr3/fr3_robotiq_robot.xml`, `scene_default.xml`, `urdf/fr3_robotiq.urdf` + `fr3_robotiq_rigid.urdf` (skim), `robot_platform/gripper/robotiq_2f85.py` | MuJoCo XML (bodies, joints, actuators, geoms, the 2F-85 linkage); why URDFs too (Pinocchio, Viser) |
+| ☐ | 4 | Simulator side | `run_env.py`, `env/__init__.py`, `env/BaseEnv.py`, `env/MujocoBaseEnv.py`, `robot_platform/sim/franka_fr3/SimFrankaFR3.py`, env sub/pub managers, `configs/franka_fr3/env/default.yaml` | Physics step, time modes, command law, plant gravity comp, simulated gripper, measured torque |
 | ☐ | 5 | Controller side | `run_controller.py`, `controller/__init__.py`, `controller/BaseController.py`, `controller/GravCompControl.py`, `configs/franka_fr3/controllers/grav_comp.yaml`; tutorials 01–03 | The 1 kHz loop, time modes, keys, the simplest controller end to end |
 | ☐ | 6 | Visualizer (Viser) | `run_visualizer.py`, `visualizer/BaseVisManager.py`, `visualizer/vis_manager/franka_fr3/FrankaVisManager.py`, `visualizer/data_visualizer/RobotArmVisualizer.py` (+ Mesh/Pose visualizers) | How joint angles become a robot in your browser; GUI elements |
 
@@ -43,7 +43,7 @@ There is no ROS in this repo: processes talk over LCM.
 
 | ✓ | # | Module | Files | New idea |
 |---|---|---|---|---|
-| ☐ | 13 | Hardware side | `run_hardware.py`, `robot_platform/hardware/franka_fr3/HardwareFrankaFR3.py`, `configs/franka_fr3/hardware/fr3.yaml`, tutorial 15 | Same job as `SimFrankaFR3`, on the robot; safety layer; panda-py / libfranka |
+| ☐ | 13 | Hardware side | `run_hardware.py`, `robot_platform/hardware/franka_fr3/{HardwareFrankaFR3,robotiq}.py`, `configs/franka_fr3/hardware/fr3.yaml`, `sensor/sensor/zed/ZED.py`, `configs/sensors/zed/droid.yaml`, tutorial 15 | Same job as `SimFrankaFR3`, on the robot; safety layer; panda-py / libfranka; the Robotiq over Modbus; ZED cameras |
 | ☐ | 14 | Tests and deployment | `tests/`, `scripts/preflight.py`, `scripts/launch.sh` | How each layer is checked; bring-up order |
 
 ---
@@ -90,7 +90,7 @@ scene's walls are placeholders.
 |---|---|---|
 | 1 | `run_hardware.py ... --robot.backend fake` + `grav_comp --env_mode real` | Dry run; no robot |
 | 2 | `run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml` alone | Arm holds (timeout hold) |
-| 3 | `scripts/launch.sh grav_comp real` | Arm floats under your hand; check the gripper load in Desk if it drifts |
+| 3 | `scripts/launch.sh grav_comp real` | Arm floats under your hand; check the gripper load in Desk (0.925 kg) if it drifts |
 | 4 | `run_controller.py --config configs/franka_fr3/controllers/impedance.yaml --env_mode real --kq_scale 0.3` (with hardware + visualizer) | Springs back to the start pose; then full gains |
 | 5 | `scripts/launch.sh col_aware real` / `ik_qp real` | Needs your cell in `scene_info` |
 | 6 | `min_jerk real`, `ik_reach real` | Planned motions; start with small ones |
@@ -99,7 +99,7 @@ scene's walls are placeholders.
 ### The full real grasping pipeline
 
 ```
-run_sensors.py (RealSense d455_1) ─rgbd─► run_perception.py (foundation_pose_real.yaml) ─fp_obj_pose─►
+run_sensors.py (ZED ext1, droid.yaml) ─rgbd─► run_perception.py (foundation_pose_real.yaml) ─fp_obj_pose─►
 run_pose_bridge.py ─franka_object_pose─► run_controller.py (parallel_jaw_grasp / force_aware_grasp --env_mode real)
 run_scene_info.py ─franka_static_col_info / franka_robot_col_info─► controller
 run_hardware.py ◄─joint_ctrl / gripper_cmd─► controller
@@ -115,11 +115,12 @@ workstation dedicated to the robot).
 
 | File | What it proves |
 |---|---|
-| `tests/unit/test_models.py` | MJCF and URDF agree (FK); plant gravcomp; tau_J = gravity load |
+| `tests/unit/test_models.py` | MJCF and both URDFs agree (TCP, gripper linkage, gravity); 2F-85 tables and mass; plant gravcomp; tau_J = gravity load |
 | `tests/unit/test_collision_model.py` | Capsules cover the link meshes; config pairs name real geoms |
 | `tests/unit/test_gripper_sim.py` | Gripper API semantics (move, grasp, fail, seq, stop, homing) |
 | `tests/unit/test_hardware_safety.py` | Command law + every safety mechanism + gripper round trip |
-| `tests/unit/test_grasping_math.py` | Antipodal sampling, TCP poses, hand collision, grip force, pose bridge |
+| `tests/unit/test_robotiq.py` | Robotiq Modbus frames (vs the manual) and move / grasp / stop / homing against a simulated gripper |
+| `tests/unit/test_grasping_math.py` | Antipodal sampling, TCP poses (pad arc), gripper boxes cover the 2F-85, grip force, pose bridge |
 | `tests/unit/test_configs_and_imports.py` | Every YAML loads; every path / command in the docs exists; every module imports |
 | `tests/integration/test_sim_basic.py` | 01–05, 08: rates, gripper over LCM, collision info, impedance modes |
 | `tests/integration/test_sim_motion.py` | 06, 07, 09: IK-QP nudges, min-jerk to goal, IK reach to pose |
