@@ -11,7 +11,7 @@ mesh_path:
 num_joints: 7
 num_arm_joints: 7
 num_ctrl_joints: 7
-default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
+default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
 
 # PD tracking / hold: libfranka's joint-impedance example gains, the standard
 # safe starting point on the real FR3. Fingers 0 (not commanded).

@@ -15,7 +15,7 @@ task_frame: fr3_gripper_tcp
 mode: joint  # start in joint impedance; press `t` for SE(3) task
 
 # Nominal configuration (task nominal = FK(task_frame, default_q)).
-default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
+default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
 
 # Joint-space impedance: τ = Kq (q_nom − q) − Dq q̇.
 # libfranka's joint-impedance example gains (safe on the real FR3).

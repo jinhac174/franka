@@ -158,6 +158,7 @@ class RobotArmVisualizer:
         col_pairs=None,
         self_col_pairs=None,
         col_dist_thr: float = 0.1,
+        show_walls: bool = False,
         target_pose_channel: str = "",
         target_joint_channel: str = "",
         traj_channel: str = "",
@@ -240,7 +241,7 @@ class RobotArmVisualizer:
             load_collision_meshes=False,
         )
 
-        self._setup_collision_overlay(robot_col_info_channel, static_col_info_channel)
+        self._setup_collision_overlay(robot_col_info_channel, static_col_info_channel, show_walls)
         self._setup_target_pose(target_pose_channel)
         self._setup_p2p_overlays(
             urdf_path, mesh_dir, urdf_kwargs, target_joint_channel, traj_channel
@@ -1313,7 +1314,7 @@ class RobotArmVisualizer:
     # ------------------------------------------------------------------
     # Collision overlay (subscribed off the wire)
     # ------------------------------------------------------------------
-    def _setup_collision_overlay(self, robot_col_info_channel, static_col_info_channel):
+    def _setup_collision_overlay(self, robot_col_info_channel, static_col_info_channel, show_walls=False):
         import queue as _queue
 
         # Subscribe to the SAME channels the controller consumes.
@@ -1337,6 +1338,18 @@ class RobotArmVisualizer:
         self._fcl_static = {}
 
         self._show_collision = False
+        # Static obstacles (walls / floor / table) on their own: shown from the
+        # start with show_walls: true; "Show collision geometry" shows them too.
+        self._show_walls = bool(show_walls)
+        self._walls_checkbox = self._viser_server.gui.add_checkbox(
+            "Show walls", initial_value=self._show_walls
+        )
+
+        @self._walls_checkbox.on_update
+        def _(_event):
+            self._show_walls = self._walls_checkbox.value
+            self._set_walls_visible()
+
         self._checkbox = self._viser_server.gui.add_checkbox(
             "Show collision geometry", initial_value=False
         )
@@ -1346,8 +1359,7 @@ class RobotArmVisualizer:
             self._show_collision = self._checkbox.value
             for handle, _ln, _off in self._robot_col_nodes.values():
                 handle.visible = self._show_collision
-            for handle in self._wall_col_nodes.values():
-                handle.visible = self._show_collision
+            self._set_walls_visible()
             if self._show_collision:
                 self._update_robot_col_transforms()
 
@@ -1381,6 +1393,10 @@ class RobotArmVisualizer:
                 self._self_dist_handle.visible = False
             else:
                 self._update_collision_distances()
+
+    def _set_walls_visible(self):
+        for handle in self._wall_col_nodes.values():
+            handle.visible = self._show_walls or self._show_collision
 
     def _drain_latest_col(self, q):
         data = None
@@ -1416,7 +1432,7 @@ class RobotArmVisualizer:
                 mesh,
                 wxyz=vtf.SO3.from_matrix(T[:3, :3]).wxyz,
                 position=T[:3, 3],
-                visible=self._show_collision,
+                visible=self._show_walls or self._show_collision,
             )
             self._wall_col_nodes[name] = handle
 

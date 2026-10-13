@@ -105,14 +105,18 @@ def check_robot(hostname, connect):
 
 
 def check_gripper(port, connect):
-    """Robotiq 2F-85 on its USB / RS-485 adapter (Modbus RTU)."""
-    if not os.path.exists(port):
+    """Robotiq 2F-85 on its USB / RS-485 adapter (Modbus RTU), local or
+    bridged from another computer (``socket://host:port``)."""
+    if "://" in port:
+        report("INFO", "Robotiq port", f"{port} (network bridge: scripts/robotiq_tcp_bridge.py on that host)")
+    elif not os.path.exists(port):
         report("FAIL", "Robotiq port", f"{port} missing: USB plugged in? ls /dev/ttyUSB*")
         return
-    if not os.access(port, os.R_OK | os.W_OK):
+    if "://" not in port and not os.access(port, os.R_OK | os.W_OK):
         report("FAIL", "Robotiq port", f"no access to {port}: sudo usermod -aG dialout $USER (log in again)")
         return
-    report("OK", "Robotiq port", port)
+    if "://" not in port:
+        report("OK", "Robotiq port", port)
     try:
         import serial  # noqa: F401
     except ImportError:

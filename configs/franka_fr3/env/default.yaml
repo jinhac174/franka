@@ -14,9 +14,10 @@ view_freq: 30
 
 platform:
   name: franka_fr3
-  # Franka "ready" pose [0, -pi/4, 0, -3pi/4, 0, pi/2, pi/4]; matches the
+  # Ready pose [0, -pi/4, 0, -3pi/4, 0, pi/2, 0] (joint 7 = 0, as in DROID; the
+  # Robotiq is mounted at 0 deg, so it is square to the base here); matches the
   # controller's default_q so the sim starts at the target.
-  default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]
+  default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
   default_gripper_width: 0.085
   # true = plant compensates gravity, exactly like the real FR3 in torque
   # control. Controllers must then NOT add g(q) (plant_gravity_comp: true in

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from queue import Empty, Full, Queue
 
 import fcl
@@ -18,7 +18,7 @@ from controller.BaseController import BaseController
 from data_type.basic_types.ColInfoData import ColInfoData
 from data_type.basic_types.JointCtrlData import JointCtrlData
 from data_type.basic_types.JointMeasData import JointMeasData
-from utils.fcl.getter import get_fcl_geom
+from utils.fcl.getter import col_frame_name, get_fcl_geom
 from utils.lie.kinematics import get_point_Jacobian
 from utils.pinocchio.getter import get_fk_link_poses, get_link_Jacobians
 
@@ -30,10 +30,34 @@ class PlanResult:
     state: str
     qd_des: np.ndarray
     success: bool
+    # repulsion: field -> the link points near an obstacle (FieldPair list).
+    field_pairs: list = field(default_factory=list)
 
+
+@dataclass
+class FieldPair:
+    """One link point near one obstacle, from the planner (world frame)."""
+
+    frame_id: int  # Pinocchio frame of the link
+    delta: np.ndarray  # nearest point on the link, in the link frame
+    n: np.ndarray  # unit push direction (obstacle -> link)
+    d: float  # signed distance at planning time (< 0: inside the obstacle)
+    p: np.ndarray  # nearest link point at planning time
 
 class CollisionAwareGravCompController(BaseController):
-    """Gravity compensation with FCL distance checks and a repulsive QP.
+    """Gravity compensation with FCL distance checks and a repulsion.
+
+    ``repulsion`` (config) picks how the arm is kept away from obstacles:
+
+    - ``qp`` (default, tutorial 05): within ``magin_thr`` of
+      ``safty_dist_thr``, a QP picks an escape joint velocity that the joint
+      PD (``kp`` / ``kd``) tracks; below ``safty_dist_thr`` the arm stops.
+    - ``field``: a potential field in torque. Each link point closer than
+      ``d0 = safty_dist_thr + magin_thr`` to an obstacle is pushed along the
+      obstacle normal with ``F = k (d0 - d) - c (n . v)`` (``field_stiffness``,
+      ``field_damping``, at most ``field_max_force``), ``tau = J^T F``. It keeps
+      pushing inside the obstacle (signed distance), so the arm is driven back
+      out. Computed at the control rate from the planner's nearest points.
 
     Threading
     ---------
@@ -80,6 +104,26 @@ class CollisionAwareGravCompController(BaseController):
         self._safety_dist_thr = float(config.get("safty_dist_thr", 0.01))
         self._margin_thr = float(config.get("magin_thr", 0.05))
         self._repulsive_coeff = float(config.get("repulsive_coeff", 10.0))
+
+        self._repulsion = str(config.get("repulsion", "qp"))
+        if self._repulsion not in ("qp", "field"):
+            raise ValueError(f"repulsion must be 'qp' or 'field', got {self._repulsion!r}")
+        self._field_d0 = self._safety_dist_thr + self._margin_thr
+        self._field_k = float(config.get("field_stiffness", 1000.0))
+        self._field_c = float(config.get("field_damping", 60.0))
+        self._field_f_max = float(config.get("field_max_force", 150.0))
+        # Brake: extra joint damping while the field pushes and for
+        # field_brake_time after, so the spring's energy does not throw the
+        # (otherwise free-floating) arm away from the obstacle.
+        self._field_brake_kd = np.asarray(
+            config.get("field_brake_damping", [0.0] * self._num_joints), dtype=np.float64
+        )
+        self._field_brake_time = float(config.get("field_brake_time", 0.5))
+        self._field_last_push_t = -np.inf
+        # Planner hands over pairs a bit beyond d0, so the 1 kHz update can
+        # switch the force on between plans.
+        self._field_lookahead = 0.05
+        self._field_pairs: list[FieldPair] = []
 
         self._plan_freq = float(config["plan_freq"])
         self._plan_dt = 1.0 / self._plan_freq
@@ -226,6 +270,7 @@ class CollisionAwareGravCompController(BaseController):
 
         self._ctrl_state = latest.state
         self._qd_des = latest.qd_des.copy()
+        self._field_pairs = latest.field_pairs
 
     # --------------------------------------------------------- FCL / geometry
     def _get_col_links(self, q: np.ndarray) -> dict:
@@ -268,7 +313,11 @@ class CollisionAwareGravCompController(BaseController):
         collision_data = {name: {} for name in self._col_link_names}
 
         for link_name, obs_name in self._col_pairs:
-            req = fcl.DistanceRequest(enable_nearest_points=True)
+            # Signed: negative inside the obstacle, with the nearest points of
+            # the penetration (the field needs the way back out).
+            req = fcl.DistanceRequest(
+                enable_nearest_points=True, enable_signed_distance=True
+            )
             res = fcl.DistanceResult()
             fcl.distance(
                 dict_col_links[link_name]["col_geom"],
@@ -317,6 +366,8 @@ class CollisionAwareGravCompController(BaseController):
         dict_col_links = self._get_col_links(q)
         dict_col_obstacles = self._get_col_obstacles()
         collision_data = self._get_col_data(dict_col_links, dict_col_obstacles)
+        if self._repulsion == "field":
+            return self._field_plan(dict_col_links, collision_data)
 
         is_healthy = True
         is_nearby = False
@@ -356,6 +407,67 @@ class CollisionAwareGravCompController(BaseController):
 
         qd_des, success = self._solve_repulsive_qp(q, qd, collision_data)
         return PlanResult(state="repulsive", qd_des=qd_des, success=success)
+
+    def _field_plan(self, dict_col_links: dict, collision_data: dict) -> PlanResult:
+        """Hand the link points near an obstacle to the control loop."""
+        pairs = []
+        for link_name, obs_name in self._col_pairs:
+            col = collision_data[link_name][obs_name]
+            d = float(col["dist"])
+            if d > self._field_d0 + self._field_lookahead:
+                continue
+            p_link = np.asarray(col["nearest_p_link"], dtype=np.float64)
+            diff = p_link - np.asarray(col["nearest_p_obs"], dtype=np.float64)
+            norm = np.linalg.norm(diff)
+            if norm < 1e-6:
+                continue  # touching exactly: no direction this tick
+            # Outside: obstacle -> link. Inside (d < 0) the nearest points
+            # swap sides, so flip to keep pointing out of the obstacle.
+            n = diff / norm * (1.0 if d >= 0 else -1.0)
+            link = dict_col_links[link_name]
+            pairs.append(
+                FieldPair(
+                    frame_id=self._pin_model.getFrameId(col_frame_name(link_name)),
+                    delta=link["R"].T @ (p_link - link["p"]),
+                    n=n,
+                    d=d,
+                    p=p_link,
+                )
+            )
+        if not pairs:
+            return PlanResult(state="grav_comp", qd_des=np.zeros(self._n_x), success=True)
+        state = "field" if min(fp.d for fp in pairs) < self._field_d0 else "field_near"
+        return PlanResult(
+            state=state, qd_des=np.zeros(self._n_x), success=True, field_pairs=pairs
+        )
+
+    def _field_torque(self, q: np.ndarray, qd: np.ndarray) -> np.ndarray:
+        """tau = sum J_point^T F n over the planner's pairs, at the current q."""
+        tau = np.zeros(self._n_x)
+        if not self._field_pairs:
+            return tau
+        model, data = self._pin_model, self._pin_data_ctrl
+        pin.computeJointJacobians(model, data, q)  # also runs forward kinematics
+        pin.updateFramePlacements(model, data)
+        for fp in self._field_pairs:
+            oMf = data.oMf[fp.frame_id]
+            r = oMf.rotation @ fp.delta
+            p = oMf.translation + r
+            # Distance now: the plan's distance moved along the normal.
+            d = fp.d + float(fp.n @ (p - fp.p))
+            if d >= self._field_d0:
+                continue
+            J6 = pin.getFrameJacobian(
+                model, data, fp.frame_id, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED
+            )
+            Jp = J6[:3, :] - _skew(r) @ J6[3:, :]  # Jacobian of the link point
+            v_n = float(fp.n @ (Jp @ qd))
+            f = self._field_k * (self._field_d0 - d) - self._field_c * v_n
+            f = float(np.clip(f, 0.0, self._field_f_max))  # push only, never pull
+            if f > 0.0:
+                self._field_last_push_t = self._cur_time
+            tau += Jp.T @ (f * fp.n)
+        return tau
 
     def _solve_repulsive_qp(
         self, q: np.ndarray, qd: np.ndarray, collision_data: dict
@@ -451,8 +563,12 @@ class CollisionAwareGravCompController(BaseController):
             )
         arm = slice(0, self._num_arm_joints)
         tau_ff[arm] += -self._arm_damping * qd[arm]
+        if self._repulsion == "field":
+            tau_ff += self._field_torque(q, qd)
+            if self._cur_time - self._field_last_push_t < self._field_brake_time:
+                tau_ff -= self._field_brake_kd * qd
 
-        if self._ctrl_state == "grav_comp":
+        if self._ctrl_state == "grav_comp" or self._repulsion == "field":
             kp = np.zeros_like(self._kp)
             kd = np.zeros_like(self._kd)
         else:
@@ -465,3 +581,7 @@ class CollisionAwareGravCompController(BaseController):
             self._cur_time, q_des[:n], qd_des[:n], tau_ff[:n], kp[:n], kd[:n]
         )
         self.ctrl_pub_que.put(cmd)
+
+
+def _skew(v: np.ndarray) -> np.ndarray:
+    return np.array([[0.0, -v[2], v[1]], [v[2], 0.0, -v[0]], [-v[1], v[0], 0.0]])

@@ -27,8 +27,7 @@ SPEED_RANGE = (0.02, 0.15)  # finger closing speed (m/s), datasheet
 MASS = 0.925  # kg incl. coupling (datasheet); enter it as the load in Desk
 
 # TCP (URDF / MuJoCo frame ``fr3_gripper_tcp``) along the approach axis z of
-# ``fr3_gripper`` (the flange frame turned -45 deg about z, like the Franka
-# Hand). The pad centres pass through it at a ~55 mm opening.
+# ``fr3_gripper`` (= the flange frame: the DROID mount, not turned about z). The pad centres pass through it at a ~55 mm opening.
 TCP_Z = 0.15
 
 # driver angle (rad) -> pad-face width (m) and pad-face height (m, in

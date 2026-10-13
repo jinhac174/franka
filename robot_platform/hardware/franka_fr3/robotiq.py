@@ -64,12 +64,20 @@ def read_frame() -> bytes:
 
 
 class SerialTransport:
-    """The real port (pyserial, imported only here)."""
+    """The real port (pyserial, imported only here).
+
+    ``port`` is a device (``/dev/ttyUSB0``) or a pyserial URL, e.g.
+    ``socket://192.168.0.127:5020`` when the gripper is plugged into another
+    computer (the DROID NUC) that bridges its port to TCP:
+    ``python3 -m serial.tools.tcp_serial_redirect -P 5020 /dev/ttyUSB0 115200``.
+    """
 
     def __init__(self, port: str, baudrate: int = 115200, timeout: float = 0.2):
         import serial
 
-        self._s = serial.Serial(port, baudrate=baudrate, bytesize=8, parity="N", stopbits=1, timeout=timeout)
+        self._s = serial.serial_for_url(
+            port, baudrate=baudrate, bytesize=8, parity="N", stopbits=1, timeout=timeout
+        )
 
     def exchange(self, request: bytes, reply_len: int) -> bytes:
         self._s.reset_input_buffer()

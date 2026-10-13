@@ -88,6 +88,16 @@ case "$TARGET" in
     if [[ $MODE == sim ]]; then
       add "$PY run_env.py --config $env $ENV_EXTRA"
     elif [[ $MODE == real ]]; then
+      # run_scene_info.py publishes the real cell (scene_real_cell.xml: floor,
+      # wall_front, wall_right); controllers must name those obstacles.
+      case $TARGET in
+        col_aware|collision)
+          [[ $ctrl != - ]] && ctrl=$C/col_aware_real_cell.yaml
+          vis=$V/collision_real_cell.yaml ;;
+        ik_qp|min_jerk|ik_reach)
+          echo "$TARGET has no real-cell config yet (its obstacles are the sim's wall_back / wall_left)." >&2
+          exit 1 ;;
+      esac
       add "$PY run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml"
       [[ $scene == 1 ]] && add "$PY run_scene_info.py --config configs/franka_fr3/hardware/scene_info.yaml"
       if [[ $TARGET == grasp || $TARGET == force_grasp ]]; then

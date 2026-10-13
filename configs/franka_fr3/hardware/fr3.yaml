@@ -8,8 +8,18 @@ gripper_state_freq: 30     # Hz gripper state / gripper joint are published (one
 
 robot:
   backend: pandapy         # pandapy = the robot; fake = no robot (testing this process)
-  hostname: 172.16.0.2     # FR3 control box (FCI) IP: set yours
-  move_to_start: false     # true: libfranka's move_to_start() before torque control
+  hostname: 192.168.0.113  # FR3 control box (FCI) IP: DROID cell (droid/misc/parameters.py robot_ip)
+  # true: move to the ready pose [0, -pi/4, 0, -3pi/4, 0, pi/2, 0] before torque
+  # control (panda-py joint motion at 20% speed). Keep the user stop in hand.
+  move_to_start: true
+  # The FR3 stops itself (reflex, red lights) when the estimated EXTERNAL
+  # torque / wrench exceeds these. panda-py's defaults (torque [20 20 18 18 16
+  # 14 12] Nm, force [20 20 20 25 25 25] N / Nm) trip as soon as you push the
+  # arm against col_aware_real_cell's wall field. The field is capped below
+  # the force limit, so only pushing hard through it stops the robot.
+  collision_thresholds:
+    torque: [60, 60, 54, 54, 40, 36, 30]
+    force: [60, 60, 60, 40, 40, 40]
   # Desk > Settings > End effector: set the load to the gripper, 0.925 kg with
   # its centre of mass 0.052 m along the flange z axis; the FR3's gravity
   # compensation uses it.
@@ -17,7 +27,9 @@ robot:
 gripper:
   backend: auto            # robotiq = the 2F-85 over USB (Modbus RTU); fake = simulated;
                            # auto = robotiq, or fake together with --robot.backend fake
-  port: /dev/ttyUSB0       # its USB / RS-485 adapter on THIS computer (ls /dev/ttyUSB*)
+  # Its USB / RS-485 adapter: on THIS computer (/dev/ttyUSB0), or, as in the
+  # DROID cell, on the NUC, bridged to TCP by scripts/robotiq_tcp_bridge.py.
+  port: socket://192.168.0.127:5020
   activate_on_start: true  # activation closes and opens the fingers once: keep them clear
 
 safety:

@@ -10,7 +10,8 @@
          * Arm position servos replaced by torque motors. SimFrankaFR3 computes
            tau = kp*(q_des-q) + kd*(qd_des-qd) + tau_ff and writes ctrl[].
          * Gripper mounted on the flange (link7 + 0.107 m) in body fr3_gripper,
-           turned -45 deg about z like the Franka Hand, so the closing axis is
+           not turned (0 deg about z: the DROID mount, checked in Viser against the real
+           robot), so the closing axis is
            fr3_gripper's y and the approach axis its z. CHECK on your rig: if
            your gripper is mounted at another angle, change fr3_gripper's quat
            here AND in urdf/fr3_robotiq*.urdf (tests/unit/test_models.py
@@ -210,7 +211,7 @@
                       <geom name="fr3_link7_collision" class="collision" mesh="link7_coll"/>
 
                       <!-- Flange (URDF fr3_link8) + Robotiq 2F-85 (URDF fr3_gripper). -->
-                      <body name="fr3_gripper" pos="0 0 0.107" quat="0.9238795 0 0 -0.3826834" childclass="robotiq">
+                      <body name="fr3_gripper" pos="0 0 0.107" quat="1 0 0 0" childclass="robotiq">
                         <!-- Tool centre point between the pad faces (URDF fr3_gripper_tcp), at
                              their height for a ~55 mm opening: the pads ride on an arc and sit
                              8 mm lower fully open, 5 mm higher closed (robotiq_2f85.pad_z). -->

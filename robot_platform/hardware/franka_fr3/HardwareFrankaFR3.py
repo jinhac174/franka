@@ -56,6 +56,12 @@ from robot_platform.hardware.franka_fr3.robotiq import FakeRobotiqTransport, Rob
 N = 7
 FR3_TAU_MAX = np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
 FR3_DQ_MAX = np.array([2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26])
+# Ready pose for move_to_start; joint 7 = 0 (DROID), not Franka's pi/4.
+FR3_HOME_Q = [0.0, -np.pi / 4, 0.0, -3 * np.pi / 4, 0.0, np.pi / 2, 0.0]
+# panda-py's set_default_behavior(): contact / reflex thresholds on the
+# estimated EXTERNAL torque (Nm, per joint) and wrench (N x3, Nm x3).
+PANDAPY_DEFAULT_TORQUE_THR = [20.0, 20.0, 18.0, 18.0, 16.0, 14.0, 12.0]
+PANDAPY_DEFAULT_FORCE_THR = [20.0, 20.0, 20.0, 25.0, 25.0, 25.0]
 
 
 # ---------------------------------------------------------------------------
@@ -66,13 +72,26 @@ class PandaPyBackend:
     version (the PyPI wheel bundles libfranka 0.9.2 = Panda only; FR3 wheels
     are on the panda-py GitHub releases page)."""
 
-    def __init__(self, hostname: str):
+    def __init__(self, hostname: str, collision_thresholds=None):
         import panda_py
         from panda_py import controllers
 
         self._panda_py, self._controllers = panda_py, controllers
         self._panda = panda_py.Panda(hostname)
         self._ctrl = None
+        if collision_thresholds:
+            self.set_collision_thresholds(**collision_thresholds)
+
+    def set_collision_thresholds(self, torque, force):
+        """Reflex thresholds on the external torque / wrench (the robot stops,
+        red lights, above them). Contact is still flagged at panda-py's
+        defaults. Must be called while the robot is not moving."""
+        torque = [float(x) for x in torque]
+        force = [float(x) for x in force]
+        lo_t = list(np.minimum(PANDAPY_DEFAULT_TORQUE_THR, torque))
+        lo_f = list(np.minimum(PANDAPY_DEFAULT_FORCE_THR, force))
+        self._panda.get_robot().set_collision_behavior(lo_t, torque, lo_f, force)
+        print(f"[FR3] Collision reflex thresholds: torque {torque} Nm, force {force} N / Nm")
 
     def start_torque(self):
         # No extra damping / filtering inside panda-py: our command already has it.
@@ -86,7 +105,9 @@ class PandaPyBackend:
         self._panda.recover()
 
     def move_to_start(self):
-        self._panda.move_to_start()
+        # Not panda-py's move_to_start(): its pose has joint 7 = pi/4 (Franka Hand).
+        if not self._panda.move_to_joint_position(FR3_HOME_Q, speed_factor=0.2):
+            print("[FR3] Did not reach the start pose; torque control starts where the arm is.")
 
     def state(self):
         s = self._panda.get_state()
@@ -102,7 +123,7 @@ class FakeBackend:
     a robot (the gripper is faked separately: ``gripper.backend: fake``)."""
 
     def __init__(self, q0=None):
-        self._q = np.array(q0 if q0 is not None else [0, -np.pi / 4, 0, -3 * np.pi / 4, 0, np.pi / 2, np.pi / 4], dtype=float)
+        self._q = np.array(q0 if q0 is not None else [0, -np.pi / 4, 0, -3 * np.pi / 4, 0, np.pi / 2, 0], dtype=float)
         self._dq = np.zeros(N)
         self._tau = np.zeros(N)
         self._inertia = np.array([0.76, 1.83, 1.22, 1.2, 0.12, 0.13, 0.08])
@@ -148,6 +169,10 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         self._backend_name = str(hw.get("backend", "pandapy"))
         self._hostname = str(hw.get("hostname", ""))
         self._move_to_start = bool(hw.get("move_to_start", False))
+        ct = hw.get("collision_thresholds", None)
+        self._collision_thresholds = (
+            {"torque": list(ct["torque"]), "force": list(ct["force"])} if ct else None
+        )
         gc = config.get("gripper", {}) or {}
         self._gripper_backend = str(gc.get("backend", "auto"))
         if self._gripper_backend == "auto":
@@ -207,9 +232,9 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
             self._backend = FakeBackend()
         else:
             print(f"[FR3] Connecting to {self._hostname} ...")
-            self._backend = PandaPyBackend(self._hostname)
+            self._backend = PandaPyBackend(self._hostname, self._collision_thresholds)
         if self._move_to_start:
-            print("[FR3] Moving to the start pose ...")
+            print(f"[FR3] Moving to the start pose {np.round(FR3_HOME_Q, 3).tolist()} ...")
             self._backend.move_to_start()
         if self._gripper_backend == "fake":
             self._gripper = RobotiqGripper(transport=FakeRobotiqTransport())

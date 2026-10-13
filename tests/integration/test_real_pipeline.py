@@ -32,7 +32,7 @@ def test_fake_hardware_scene_info_and_real_mode_controller(procs, lcm_listener):
     assert np.max(np.abs(q0 - HOME_Q)) < 0.02  # fake robot starts at home, holds
 
     # The collision-aware controller needs the col info (it waits for it).
-    procs.start("ctrl", CTRL, "configs/franka_fr3/controllers/col_aware_grav_comp.yaml",
+    procs.start("ctrl", CTRL, "configs/franka_fr3/controllers/col_aware_real_cell.yaml",
                 "--env_mode real")
     assert lst.wait_for(lambda: lst.count["franka_arm_joint_ctrl"] > 500, STARTUP), "no controller"
     lst.reset_counts()

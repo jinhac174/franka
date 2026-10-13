@@ -1,0 +1,40 @@
+<mujoco model="franka_fr3_real_cell">
+  <include file="fr3_robotiq_robot.xml"/>
+
+  <compiler angle="radian"/>
+
+  <option timestep="0.001" integrator="implicitfast"/>
+
+  <asset>
+    <texture type="skybox" builtin="gradient"
+             rgb1="0.3 0.5 0.7" rgb2="0 0 0"
+             width="512" height="3072"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 -0.1 1.5" dir="0 0.2 -1"
+           diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3"
+           directional="true" castshadow="true"/>
+
+    <!-- The real (DROID) cell for the collision-aware controllers, published by
+         run_scene_info.py (and by the sim env, to try it in MuJoCo first).
+         Robot base frame: +x front, +y left, z up from the mounting surface.
+
+         The walls are VIRTUAL: nothing is there physically. contype /
+         conaffinity 0 keeps them out of MuJoCo's physics too, so in the sim,
+         as on the robot, only the controller keeps the arm away from them.
+
+         floor       top face at z = 0.07 (7 cm above the base: safety margin)
+         wall_front  inner face at x = 0.70
+         wall_right  inner face at y = -0.50
+         All are 1 m thick blocks (not planes / thin boxes): the potential
+         field uses the signed distance, which stays correct while a link is
+         less than half the thickness inside. -->
+    <geom name="floor" type="box" size="1.5 1.5 0.5" pos="0 0 -0.43"
+          contype="0" conaffinity="0" rgba="0.2 0.3 0.4 0.25"/>
+    <geom name="wall_front" type="box" size="0.5 1.0 1.0" pos="1.2 0 0.9"
+          contype="0" conaffinity="0" rgba="0.85 0.35 0.3 0.25"/>
+    <geom name="wall_right" type="box" size="1.0 0.5 1.0" pos="0.0 -1.0 0.9"
+          contype="0" conaffinity="0" rgba="0.85 0.35 0.3 0.25"/>
+  </worldbody>
+</mujoco>
