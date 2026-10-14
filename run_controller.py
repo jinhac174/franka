@@ -40,13 +40,14 @@ def run_controller(cfg_controller: DictConfig):
     # this will spin off a thread for the publisher
     pub.start()
 
-    controller.initialize()
-    controller.start()
-
-    # this will safely terminate the thread
-    sub.stop()
-    pub.stop()
-    controller.stop()
+    try:
+        controller.initialize()
+        controller.start()
+    finally:
+        # this will safely terminate the threads (also when initialize fails)
+        sub.stop()
+        pub.stop()
+        controller.stop()
 
 
 if __name__ == "__main__":

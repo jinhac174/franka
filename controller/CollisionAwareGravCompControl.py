@@ -176,10 +176,17 @@ class CollisionAwareGravCompController(BaseController):
         print("[ColAwareGravComp] Initialized with FCL geoms.")
 
     def _wait_for_col_geoms(
-        self, que: Queue, label: str, timeout_s: float = 2.0
+        self, que: Queue, label: str, timeout_s: float = 60.0
     ) -> dict:
         tic = time.time()
+        warned = False
         while True:
+            if not warned and time.time() - tic > 2.0:
+                warned = True
+                print(
+                    f"[ColAwareGravComp] Waiting for {label} collision information "
+                    "(sim: run_env.py; robot: run_scene_info.py) ..."
+                )
             if not que.empty():
                 msg = que.get()
                 if not isinstance(msg, ColInfoData):
