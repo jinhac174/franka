@@ -300,19 +300,40 @@ class RobotArmVisualizer:
         Pose3DSubscriber(self._lcm_instance, self._target_pose_queue).subscribe(
             target_pose_channel
         )
+        # Target: a big bright sphere with a 3-axis crosshair through it, so it
+        # stays visible inside / behind the arm and the walls.
         self._target_handle = self._viser_server.scene.add_icosphere(
             "/ik/target",
-            radius=0.012,
-            color=(80, 220, 120),
+            radius=0.025,
+            color=(0, 255, 90),
             position=(0.0, 0.0, 0.0),
             visible=False,
+        )
+        half = 0.08
+        cross = np.array(
+            [[[-half, 0, 0], [half, 0, 0]], [[0, -half, 0], [0, half, 0]], [[0, 0, -half], [0, 0, half]]],
+            dtype=np.float32,
+        )
+        self._target_cross_handle = self._viser_server.scene.add_line_segments(
+            "/ik/target/cross",  # child of the sphere: moves with it
+            points=cross,
+            colors=np.array([[255, 60, 60], [60, 255, 60], [60, 120, 255]], dtype=np.uint8)[:, None, :].repeat(2, 1),
+            line_width=5.0,
         )
         # Current task point (published tip); distinct from the green target.
         self._tip_handle = self._viser_server.scene.add_icosphere(
             "/ik/tip",
-            radius=0.008,
-            color=(255, 80, 80),
+            radius=0.012,
+            color=(255, 60, 60),
             position=(0.0, 0.0, 0.0),
+            visible=False,
+        )
+        # Tip -> target line: how far the TCP still has to go.
+        self._target_line_handle = self._viser_server.scene.add_line_segments(
+            "/ik/tip_to_target",
+            points=np.zeros((1, 2, 3), dtype=np.float32),
+            colors=np.array([[[255, 220, 0], [255, 220, 0]]], dtype=np.uint8),
+            line_width=4.0,
             visible=False,
         )
         # Placeholder segment; updated each poll from tip → tip + scale * v*.
@@ -1298,6 +1319,8 @@ class RobotArmVisualizer:
         self._target_handle.visible = True
         self._tip_handle.position = tuple(tip)
         self._tip_handle.visible = True
+        self._target_line_handle.points = np.asarray([[tip, p_des]], dtype=np.float32)
+        self._target_line_handle.visible = True
 
         if self._target_vel_handle is None:
             return

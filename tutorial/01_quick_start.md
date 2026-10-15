@@ -133,6 +133,6 @@ You do not need to read all of this on day one. Use it as a map.
 
 **Mental model:** YAML chooses *which* classes and *which* channel strings; Python classes implement *behavior*; LCM carries *numbers* between processes.
 
-Any YAML value can be overridden from the command line with dotted keys, e.g. `python run_env.py --config ... --vis_mode vis_off --platform.gravity_comp false`.
+Any YAML value can be overridden from the command line with dotted keys, e.g. `python run_env.py --config ... --vis_mode vis_off --env_mode sim_sim_time`.
 
 When you are comfortable starting and stopping this stack, continue to [02](02_understanding_mujoco_simulator.md) (what MuJoCo is doing) and [03](03_grav_comp.md) (your first real control law).

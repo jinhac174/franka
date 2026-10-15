@@ -28,8 +28,10 @@ Safety layer (on top of the robot's own reflexes):
   and which jerk the arm.
 * ``ctrl_timeout``: without fresh commands (controller stopped / crashed / not
   started yet, or sending NaN / inf) the arm holds where it is with a soft PD.
-* ``max_joint_vel``: above it the arm switches to hold and stays there until
-  the controller is restarted (key ``h`` releases).
+* ``max_joint_vel``: above it, ``velocity_limit: brake`` (default) adds
+  damping on the excess speed of that joint only (``vel_brake_kd``), the
+  controller keeps control; ``velocity_limit: stop`` switches to hold and
+  stays there until key ``h`` releases.
 
 Keys (hardware terminal): ``q`` quit, ``h`` clear a velocity stop,
 ``r`` recover from a robot error (reflex) and restart torque control.
@@ -58,6 +60,7 @@ FR3_TAU_MAX = np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
 FR3_DQ_MAX = np.array([2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26])
 # Ready pose for move_to_start; joint 7 = 0 (DROID), not Franka's pi/4.
 FR3_HOME_Q = [0.0, -np.pi / 4, 0.0, -3 * np.pi / 4, 0.0, np.pi / 2, 0.0]
+GRIPPER_MASS = 0.925  # kg: Robotiq 2F-85 + mount (CoM 5.2 cm along flange z)
 # panda-py's set_default_behavior(): contact / reflex thresholds on the
 # estimated EXTERNAL torque (Nm, per joint) and wrench (N x3, Nm x3).
 PANDAPY_DEFAULT_TORQUE_THR = [20.0, 20.0, 18.0, 18.0, 16.0, 14.0, 12.0]
@@ -72,15 +75,37 @@ class PandaPyBackend:
     version (the PyPI wheel bundles libfranka 0.9.2 = Panda only; FR3 wheels
     are on the panda-py GitHub releases page)."""
 
-    def __init__(self, hostname: str, collision_thresholds=None):
+    def __init__(self, hostname: str, collision_thresholds=None, load=None):
         import panda_py
         from panda_py import controllers
 
         self._panda_py, self._controllers = panda_py, controllers
         self._panda = panda_py.Panda(hostname)
         self._ctrl = None
+        self._model = None
         if collision_thresholds:
             self.set_collision_thresholds(**collision_thresholds)
+        if load:
+            # Mass the Desk payload is missing (wrist camera + mount), from
+            # scripts/identify_payload.py. Point mass: tiny inertia.
+            com = [float(x) for x in load["com"]]
+            self._panda.get_robot().set_load(
+                float(load["mass"]), com, (np.eye(3) * 1e-4).flatten().tolist()
+            )
+        self.report_payload()
+
+    def report_payload(self):
+        """The FR3 compensates gravity with the end-effector mass set in Desk.
+        A wrong value is a constant torque error: the arm sags (or rises)
+        whenever friction lets go."""
+        s = self._panda.get_state()
+        m = s.m_ee + s.m_load
+        print(f"[FR3] Payload in the robot's gravity model: m_ee {s.m_ee:.3f} kg at "
+              f"{np.round(s.F_x_Cee, 3).tolist()} m, m_load {s.m_load:.3f} kg at "
+              f"{np.round(s.F_x_Cload, 3).tolist()} m")
+        if s.m_ee < GRIPPER_MASS - 0.1 or m > GRIPPER_MASS + 0.5:
+            print(f"[FR3] WARNING: {m:.3f} kg != the Robotiq gripper's {GRIPPER_MASS} kg: gravity "
+                  "compensation is off, the arm will drift. Desk > Settings > End effector.")
 
     def set_collision_thresholds(self, torque, force):
         """Reflex thresholds on the external torque / wrench (the robot stops,
@@ -113,6 +138,14 @@ class PandaPyBackend:
         s = self._panda.get_state()
         return np.array(s.q), np.array(s.dq), np.array(s.tau_J)
 
+    def robot_gravity(self, q):
+        """Gravity torque the FR3 itself compensates at q (its arm model + the
+        Desk payload + set_load)."""
+        if self._model is None:
+            self._model = self._panda.get_model()
+        s = self._panda.get_state()
+        return np.array(self._model.gravity(list(q), s.m_total, list(s.F_x_Ctotal)))
+
     def set_torque(self, tau):
         self._ctrl.set_control(np.asarray(tau, dtype=np.float64))
 
@@ -122,7 +155,9 @@ class FakeBackend:
     FR3). For testing this process and the safety layer on a machine without
     a robot (the gripper is faked separately: ``gripper.backend: fake``)."""
 
-    def __init__(self, q0=None):
+    def __init__(self, q0=None, gravity_fn=None):
+        # Gravity the fake "FR3" compensates itself (the URDF's; none if None).
+        self._gravity_fn = gravity_fn
         self._q = np.array(q0 if q0 is not None else [0, -np.pi / 4, 0, -3 * np.pi / 4, 0, np.pi / 2, 0], dtype=float)
         self._dq = np.zeros(N)
         self._tau = np.zeros(N)
@@ -141,6 +176,9 @@ class FakeBackend:
 
     def move_to_start(self):
         pass
+
+    def robot_gravity(self, q):
+        return np.zeros(N) if self._gravity_fn is None else self._gravity_fn(q)
 
     def _integrate(self):
         t = time.time()
@@ -173,6 +211,19 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         self._collision_thresholds = (
             {"torque": list(ct["torque"]), "force": list(ct["force"])} if ct else None
         )
+        # robot = the FR3's own gravity compensation (default); urdf = cancel
+        # it and use the Pinocchio model of gravity_urdf instead; controller =
+        # cancel it, the controller sends g(q) itself (plant_gravity_comp:
+        # false); the hold (no fresh command) still uses gravity_urdf.
+        self._gravity_model = str(hw.get("gravity_model", "robot"))
+        if self._gravity_model not in ("robot", "urdf", "controller"):
+            raise ValueError("robot.gravity_model must be 'robot', 'urdf' or 'controller', "
+                             f"got {self._gravity_model!r}")
+        self._gravity_urdf = str(hw.get("gravity_urdf", "assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf"))
+        self._pin = None
+        self._grav_rejected = None  # gravity_model: controller check, per controller start
+        ld = hw.get("load", None)
+        self._load = {"mass": float(ld["mass"]), "com": list(ld["com"])} if ld else None
         gc = config.get("gripper", {}) or {}
         self._gripper_backend = str(gc.get("backend", "auto"))
         if self._gripper_backend == "auto":
@@ -185,6 +236,12 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         self._tau_rate_max = float(s.get("tau_rate_max", 1000.0))
         self._max_joint_error = float(s.get("max_joint_error", 0.1))
         self._dq_stop = np.asarray(s.get("max_joint_vel", 0.9 * FR3_DQ_MAX), dtype=float)
+        self._vel_mode = str(s.get("velocity_limit", "brake"))
+        if self._vel_mode not in ("brake", "stop"):
+            raise ValueError(f"safety.velocity_limit must be 'brake' or 'stop', got {self._vel_mode!r}")
+        self._vel_brake_kd = np.asarray(
+            s.get("vel_brake_kd", [20, 20, 20, 20, 5, 5, 2]), dtype=float
+        )
         self._ctrl_timeout = float(s.get("ctrl_timeout", 0.1))
         self._hold_kp = np.asarray(s.get("hold_kp", [300, 300, 300, 300, 125, 75, 25]), dtype=float)
         self._hold_kd = np.asarray(s.get("hold_kd", [35, 35, 35, 15, 15, 15, 7]), dtype=float)
@@ -227,12 +284,16 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
 
     # ------------------------------------------------------------ lifecycle
     def initialize(self):
+        import pinocchio as pin
+
+        model = pin.buildModelFromUrdf(self._gravity_urdf)
+        self._pin = (pin, model, model.createData())
         if self._backend_name == "fake":
             print("[FR3] FAKE backend: no robot connected.")
-            self._backend = FakeBackend()
+            self._backend = FakeBackend(gravity_fn=self._urdf_gravity)
         else:
             print(f"[FR3] Connecting to {self._hostname} ...")
-            self._backend = PandaPyBackend(self._hostname, self._collision_thresholds)
+            self._backend = PandaPyBackend(self._hostname, self._collision_thresholds, self._load)
         if self._move_to_start:
             print(f"[FR3] Moving to the start pose {np.round(FR3_HOME_Q, 3).tolist()} ...")
             self._backend.move_to_start()
@@ -249,6 +310,17 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         q, _, _ = self._backend.state()
         self._hold_q = q.copy()
         self._tau_prev = np.zeros(N)
+        if self._backend_name != "fake":
+            diff = self._backend.robot_gravity(q) - self._urdf_gravity(q)
+            print(f"[FR3] Gravity: robot model - URDF model at this pose = "
+                  f"{np.round(diff, 2).tolist()} Nm")
+            if self._gravity_model == "urdf":
+                print("[FR3] gravity_model: urdf -- the FR3's gravity compensation is cancelled, "
+                      f"{self._gravity_urdf} holds the arm.")
+            elif self._gravity_model == "controller":
+                print("[FR3] gravity_model: controller -- the FR3's gravity compensation is "
+                      "cancelled. The CONTROLLER must send g(q): run it with "
+                      "--plant_gravity_comp false, or the arm FALLS. (Hold uses the URDF.)")
         self._backend.start_torque()
         for target in (self._gripper_action_loop, self._gripper_state_loop):
             th = threading.Thread(target=target, daemon=True)
@@ -315,14 +387,21 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
             else:  # NaN / inf would pass np.clip: drop it (-> timeout hold)
                 print("[FR3] Non-finite command ignored.")
 
-        if np.any(np.abs(dq) > self._dq_stop) and not self._vel_stopped:
+        excess = np.maximum(np.abs(dq) - self._dq_stop, 0.0)
+        if self._vel_mode == "stop" and np.any(excess > 0) and not self._vel_stopped:
             self._vel_stopped = True
             self._hold_q = q.copy()
             print(f"[FR3] Joint velocity limit exceeded ({np.round(np.abs(dq), 2)}): "
                   "holding. Press h to resume commands.")
 
         fresh = self._last_cmd is not None and now - self._last_cmd_t <= self._ctrl_timeout
-        if fresh and not self._vel_stopped:
+        if not fresh:
+            self._grav_rejected = None  # controller gone: check the next one again
+        if fresh and not self._vel_stopped and self._gravity_model == "controller" and self._pin is not None:
+            if self._grav_rejected is None:  # first command of this controller
+                self._grav_rejected = self._lacks_gravity(q, dq)
+        use_cmd = fresh and not self._vel_stopped and not self._grav_rejected
+        if use_cmd:
             _, q_des, qd_des, tau_ff, kp, kd = self._last_cmd.get_data()
             q_des = np.clip(q_des, q - self._max_joint_error, q + self._max_joint_error)
             tau = kp * (q_des - q) + kd * (qd_des - dq) + tau_ff
@@ -330,6 +409,13 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         else:
             # No (fresh) command: hold the last commanded / measured pose.
             tau = self._hold_kp * (self._hold_q - q) - self._hold_kd * dq
+        if self._vel_mode == "brake":
+            # Damp only the speed above the limit, only on that joint.
+            tau = tau - self._vel_brake_kd * excess * np.sign(dq)
+        if self._gravity_model != "robot" and self._pin is not None:
+            tau = tau - self._backend.robot_gravity(q)
+            if self._gravity_model == "urdf" or not use_cmd:
+                tau = tau + self._urdf_gravity(q)  # hold never relies on a controller
 
         tau = np.clip(tau, -self._tau_max, self._tau_max)
         step = self._tau_rate_max * self._update_dt
@@ -345,6 +431,28 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         if que is not None:
             que.put(copy.deepcopy(self._arm_meas))
         self._dispatch_gripper_cmds()
+
+    def _lacks_gravity(self, q, dq):
+        """gravity_model: controller -- does the controller's command carry
+        g(q)? One started with plant_gravity_comp: true sends ~0 on the
+        shoulder / elbow and the arm would fall: refuse it (keep holding)."""
+        _, q_des, qd_des, tau_ff, kp, kd = self._last_cmd.get_data()
+        q_des = np.clip(q_des, q - self._max_joint_error, q + self._max_joint_error)
+        tau = kp * (q_des - q) + kd * (qd_des - dq) + tau_ff
+        g = self._urdf_gravity(q)
+        big = np.abs(g) > 5.0
+        bad = big & (np.abs(tau - g) > 0.5 * np.abs(g))
+        if np.any(bad):
+            print(f"[FR3] Controller REFUSED: its torque {np.round(tau, 1).tolist()} does not carry "
+                  f"gravity {np.round(g, 1).tolist()} (gravity_model: controller). Start it with "
+                  "plant_gravity_comp: false. Holding.")
+            return True
+        print("[FR3] Controller sends gravity: following it.")
+        return False
+
+    def _urdf_gravity(self, q):
+        pin, model, data = self._pin
+        return pin.computeGeneralizedGravity(model, data, np.asarray(q, dtype=float))
 
     def _on_error(self, e):
         self._error = True

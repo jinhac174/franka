@@ -1,0 +1,142 @@
+# IK QP (tutorial 06) in the real (DROID) cell: keyboard target, avoiding the
+# virtual floor (z = 0.02), front wall (x = 0.85) and left wall (y = +0.50) of
+# scene_real_cell.xml (published by run_scene_info.py on the robot).
+name: ik_qp
+ctrl_freq: 1000
+env_mode: sim_real_time
+
+# Pinocchio model: the 7 arm joints (urdf/fr3_robotiq_rigid.urdf: the Robotiq
+# gripper is a rigid payload). The gripper goes through the gripper API.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
+mesh_path:
+  path_1: assets/scene/franka_fr3/urdf
+
+num_joints: 7
+num_ctrl_joints: 7
+# Home for key "h": Franka ready pose, gripper open.
+default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
+
+# Task-space point: the gripper's tool centre point (between the fingertips).
+task_link: fr3_gripper_tcp
+task_point_local: [0.0, 0.0, 0.0]
+
+# Contracting field: v* = vel_gain*(p_des-p) - cart_damping*p_dot, clipped.
+vel_gain: 3.0
+cart_damping: 0.1
+v_max: 0.25
+pos_tol: 0.005
+# Control loop runs at ctrl_freq; FCL+OSQP run on a side thread at plan_freq.
+# Keeping plan << ctrl avoids missed ticks / burst catch-up freak-outs.
+plan_freq: 100
+qd_filter: 0.25          # low-pass on qd_des in the control thread (1 = raw)
+qp_reg: 0.01
+plan_horizon: 0.05
+# When d < d_safe, cap the demanded gap-opening speed (m/s) so the QP stays feasible.
+col_sep_rate_max: 0.25
+use_position_pd: false   # velocity tracking with velocity_control_D_gain
+# Joint tracking. velocity (tutorial) = only velocity_control_D_gain on
+# (qd_des - qd): about 1 Nm, below the real FR3's joint friction, so the arm
+# sticks. reference = q_ref += qd_des dt, tau = ref_kp (q_ref - q) +
+# ref_kd (qd_des - qd): a stuck joint builds torque until it moves (at most
+# ref_max_lead ahead of q), and the goal is held stiffly.
+tracking: reference
+ref_kp: [300, 300, 300, 300, 120, 80, 30]   # Nm/rad (run_hardware's hold_kp level)
+ref_kd: [30, 40, 30, 30, 6, 6, 2]           # Nm s/rad
+ref_max_lead: 0.05                          # rad
+
+# Joint-space home (key "h")
+joint_vel_gain: 1.0
+joint_damping: 0.5
+joint_pos_tol: 0.02
+
+# Keyboard nudging of p_des (m per keypress).
+target_step: 0.01
+target_step_min: 0.002
+target_step_max: 0.05
+
+# ---------------------------------------------------------------------------
+# Gains
+#   kp = default_kd^2 / (4 * mean_mass_matrix_diag)   # critical damping
+#   require M - delay*kd > 0 and kd - kp*delay > 0
+# Velocity mode uses velocity_control_D_gain with kp=0.
+#
+# mean_mass_matrix_diag = diag(M(q)) from MuJoCo mj_fullM at the ready pose on
+# fr3_robotiq_robot.xml (rigid-body inertia + joint armature).
+# ---------------------------------------------------------------------------
+est_time_delay: 0.01
+mean_mass_matrix_diag: [0.7624, 1.829, 1.2239, 1.1964, 0.1171, 0.1262, 0.0759, 0.115, 0.115]
+default_kd: [5.0, 8.0, 4.0, 4.0, 1.0, 1.0, 0.5, 0.0, 0.0]
+velocity_control_D_gain: [5.0, 5.0, 5.0, 5.0, 2.0, 2.0, 1.0, 0.0, 0.0]
+
+# Gravity: the controller sends g(q) from urdf_path itself. The plant does
+# not compensate it (sim env gravity_comp: false; on the FR3, run_hardware
+# gravity_model: controller cancels the robot's own compensation).
+plant_gravity_comp: false
+# Coriolis is NOT compensated by the FR3, so the controller adds C(q,qd)qd.
+do_coriolis_comp: true
+# Coulomb friction FF: tau += Fjc * sat(qd_des / friction_phi).
+# Fjc = the FR3 joint frictionloss in the MJCF. It is driven by the *desired*
+# velocity, so full compensation does not chatter; with less, the final slow
+# approach to a goal stalls on friction. On the real FR3, re-identify these.
+do_friction_comp: true
+# Velocity (rad/s) at which the friction FF reaches full strength. Must sit
+# below joint_vel_gain * joint_pos_tol, or the last approach to home stalls.
+friction_phi: 0.01
+Fjc: [1.137, 1.137, 1.137, 1.137, 0.763, 0.44, 0.248]
+
+# Below the FR3 limits (2.62 rad/s for joints 1-4, 4.18-5.26 for 5-7).
+# Fingers 0: they are not commanded by this controller.
+joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5]
+
+safty_dist_thr: 0.02
+
+col_link_names: ["fr3_link2", "fr3_link3", "fr3_link4", "fr3_link5", "fr3_link5__2",
+                 "fr3_link6", "fr3_link7", "fr3_link7__2", "fr3_gripper", "fr3_gripper__2"]
+obs_names: ["floor", "wall_front", "wall_left"]
+col_pairs:
+  - ["fr3_link2", "wall_front"]
+  - ["fr3_link2", "wall_left"]
+  - ["fr3_link3", "wall_front"]
+  - ["fr3_link3", "wall_left"]
+  - ["fr3_link3", "floor"]
+  - ["fr3_link4", "wall_front"]
+  - ["fr3_link4", "wall_left"]
+  - ["fr3_link4", "floor"]
+  - ["fr3_link5", "wall_front"]
+  - ["fr3_link5", "wall_left"]
+  - ["fr3_link5", "floor"]
+  - ["fr3_link5__2", "wall_front"]
+  - ["fr3_link5__2", "wall_left"]
+  - ["fr3_link5__2", "floor"]
+  - ["fr3_link6", "wall_front"]
+  - ["fr3_link6", "wall_left"]
+  - ["fr3_link6", "floor"]
+  - ["fr3_link7", "wall_front"]
+  - ["fr3_link7", "wall_left"]
+  - ["fr3_link7", "floor"]
+  - ["fr3_link7__2", "wall_front"]
+  - ["fr3_link7__2", "wall_left"]
+  - ["fr3_link7__2", "floor"]
+  - ["fr3_gripper", "wall_front"]
+  - ["fr3_gripper", "wall_left"]
+  - ["fr3_gripper", "floor"]
+  - ["fr3_gripper__2", "wall_front"]
+  - ["fr3_gripper__2", "wall_left"]
+  - ["fr3_gripper__2", "floor"]
+
+dict_joints:
+  arm:
+    joint_meas_channel: franka_arm_joint_meas
+    list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
+
+sub_manager:
+  name: franka
+  arm_joint_meas_channel: franka_arm_joint_meas
+  static_col_info_channel: franka_static_col_info
+  robot_col_info_channel: franka_robot_col_info
+
+pub_manager:
+  name: joint_ctrl_pose
+  ctrl_channel: franka_arm_joint_ctrl
+  gripper_cmd_channel: franka_gripper_cmd
+  pose_channel: franka_ik_target_pose

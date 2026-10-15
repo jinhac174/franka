@@ -47,6 +47,7 @@ def hw():
     # Steps are called back to back but wall-clock time still passes (a lot on
     # a loaded machine): no command timeout unless a test enables it.
     h._ctrl_timeout = 1e9
+    h._gravity_model = "robot"  # tests check the command law alone
     yield h
     h.shutdown()
 
@@ -119,7 +120,17 @@ def test_non_finite_command_is_ignored(hw):
     assert np.all(np.isfinite(step(hw, 20)))
 
 
+def test_velocity_brake_damps_excess_only(hw):
+    hw._vel_mode = "brake"
+    hw._backend.dq = np.r_[3.0, np.zeros(6)]  # 1 rad/s above max_joint_vel[0] = 2
+    send(hw, Q0, kp=np.zeros(7))
+    tau = step(hw, 50)
+    assert not hw._vel_stopped  # keeps following the controller
+    assert tau[0] < -1.0 and np.allclose(tau[1:], 0.0, atol=1e-9)
+
+
 def test_velocity_stop_and_release(hw):
+    hw._vel_mode = "stop"
     hw._backend.dq = np.r_[3.0, np.zeros(6)]  # above max_joint_vel[0] = 2
     send(hw, Q0 + 0.05, kp=np.full(7, 100.0))
     step(hw)
@@ -168,3 +179,20 @@ def test_gripper_command_roundtrip(hw):
 def test_shutdown_is_idempotent(hw):
     hw.shutdown()
     hw.shutdown()
+
+
+def test_controller_gravity_mode_refuses_command_without_gravity(hw, monkeypatch):
+    import pinocchio as pin
+
+    model = pin.buildModelFromUrdf("assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf")
+    hw._pin = (pin, model, model.createData())
+    hw._gravity_model = "controller"
+    g = hw._urdf_gravity(Q0)
+    monkeypatch.setattr(hw._backend, "robot_gravity", lambda q: g, raising=False)
+    send(hw, Q0, kp=np.zeros(7))  # plant_gravity_comp: true style: no g(q)
+    step(hw)
+    assert hw._grav_rejected
+    hw._grav_rejected = None  # as after that controller stopped
+    send(hw, Q0, kp=np.zeros(7), tau_ff=g)  # carries gravity
+    step(hw)
+    assert hw._grav_rejected is False

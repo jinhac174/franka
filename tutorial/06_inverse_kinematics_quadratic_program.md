@@ -106,15 +106,28 @@ The 1 kHz loop turns the plan into torque with a damper on the velocity error pl
 
 $$
 \tau = K_d(\dot q_{\mathrm{des}}-\dot q)
+      + g(q)
       + C(q,\dot q)\dot q
       + F_c\,\mathrm{sat}\!\left(\dot q_{\mathrm{des}}/\phi\right).
 $$
 
-- No $g(q)$: the FR3 cancels gravity itself ([03](03_grav_comp.md)).
+- $g(q)$: gravity from the controller's URDF (`plant_gravity_comp: false`, [03](03_grav_comp.md)).
 - $C(q,\dot q)\dot q$: Coriolis/centrifugal torques, which the FR3 does **not** cancel.
 - $F_c\,\mathrm{sat}(\cdot)$: Coulomb friction compensation. The FR3 joints have about 1.1 Nm of friction on joints 1–4. Near a goal the planner asks for tiny velocities; a small damper torque cannot overcome that friction and the arm **stalls** just short of the target. The feedforward pushes with the full friction torque in the commanded direction as soon as $|\dot q_{\mathrm{des}}| > \phi$.
 
 **Try:** set `friction_phi: 0.03` or halve `Fjc`, press `h`, and watch joints 2 and 6 stall a few hundredths of a radian from home. On the real robot the friction values must be identified again — the MuJoCo numbers are only a starting point.
+
+### On the real robot: tracking a reference (`tracking: reference`)
+
+On the real FR3 the damper above pushes with about 1 Nm, below the joint friction, so the arm sticks. `ik_qp_real_cell.yaml` keeps the planner (field, QP, collision rows) unchanged and tracks its $\dot q_{\mathrm{des}}$ through an integrated joint reference instead:
+
+$$
+q_{\mathrm{ref}} \leftarrow q_{\mathrm{ref}} + \dot q_{\mathrm{des}}\,\Delta t,
+\qquad
+\tau = K_p^{\mathrm{ref}}(q_{\mathrm{ref}}-q) + K_d^{\mathrm{ref}}(\dot q_{\mathrm{des}}-\dot q) + \tau_{\mathrm{ff}}.
+$$
+
+A stuck joint lets $q_{\mathrm{ref}}$ run ahead (at most `ref_max_lead`), so the spring builds up torque until friction gives way, and at the goal $q_{\mathrm{ref}}$ is held stiffly. `tracking: velocity` is the damper above. Key `h` also moves the target to the TCP at the home pose.
 
 The model has the 7 arm joints (the gripper is a rigid payload in the controllers' URDF); all 7 are commanded.
 

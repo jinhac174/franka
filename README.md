@@ -17,9 +17,12 @@ run_pose_bridge.py ◄── fp_obj_pose ── run_perception.py (FoundationPos
 ```
 
 Both the simulator and the robot apply the same law to every command:
-`tau = kp (q_des − q) + kd (qd_des − qd) + tau_ff`. Gravity is compensated on
-the plant side, as the FR3 firmware does. A controller therefore runs
-unchanged on either one; only `--env_mode real` changes for the robot.
+`tau = kp (q_des − q) + kd (qd_des − qd) + tau_ff`. Gravity is compensated by
+the controller (g(q) from its URDF, `plant_gravity_comp: false`), as in the
+original tutorials: the sim applies plain gravity and `run_hardware.py` cancels
+the FR3's own compensation (`gravity_model: controller`). A controller
+therefore runs unchanged on either one; only `--env_mode real` changes for the
+robot.
 
 **Start here:** [STUDY_GUIDE.md](STUDY_GUIDE.md), an ordered path through the
 code (what to read, then what to run).
@@ -59,7 +62,7 @@ scripts/launch.sh ik_qp real           # same controller on the FR3
 ```
 
 Any YAML value can be overridden on the command line, e.g.
-`--platform.gravity_comp false` or `--env_mode real`.
+`--vis_mode vis_off` or `--env_mode real`.
 
 ## Tutorials
 

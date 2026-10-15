@@ -42,7 +42,7 @@ $$
 \tau = K_p(q_{\mathrm{des}}-q) + K_d(\dot q_{\mathrm{des}}-\dot q) + \tau_{\mathrm{ff}},
 $$
 
-and hands it to panda-py’s `AppliedTorque` controller, which feeds libfranka’s 1 kHz loop (holding the latest value). The FR3 adds gravity compensation on top — the reason all controllers use `plant_gravity_comp: true`. Gripper commands run in their own thread (`move` / `grasp` block until done; `robotiq.py` turns them into Modbus position / speed / force requests and waits for the 2F-85's "object detected" status); `stop` interrupts them.
+and hands it to panda-py’s `AppliedTorque` controller, which feeds libfranka’s 1 kHz loop (holding the latest value). The FR3 always adds its own gravity compensation on top; with `robot.gravity_model: controller` (default) `run_hardware.py` subtracts it again (libfranka's model of the arm + Desk payload), so the controller's own $g(q)$ holds the arm exactly as in the sim (`plant_gravity_comp: false` everywhere). A controller whose first command carries no $g(q)$ on the big joints is refused (the arm keeps holding), and the hold itself uses the URDF's $g(q)$. `gravity_model: robot` returns to the FR3's compensation (controllers then need `plant_gravity_comp: true`). At start-up it prints the difference between the two models at the current pose. Gripper commands run in their own thread (`move` / `grasp` block until done; `robotiq.py` turns them into Modbus position / speed / force requests and waits for the 2F-85's "object detected" status); `stop` interrupts them.
 
 ### Safety layer
 
@@ -54,7 +54,8 @@ On top of the robot’s own reflexes and the **user stop** (keep it in your hand
 | Torque limits | `tau_max` | Never above the FR3 limits |
 | Torque-rate limit | `tau_rate_max` (1000 Nm/s) | No torque steps (libfranka rejects them, and they jerk the arm) |
 | Command timeout | `ctrl_timeout` (0.1 s) | Controller stopped / crashed / not started: hold the pose |
-| Speed guard | `max_joint_vel` | Above it: hold until you press `h` |
+| Speed guard | `max_joint_vel`, `velocity_limit` | `brake` (default): extra damping on the speed above the limit, that joint only; `stop`: hold until you press `h` |
+| Collision reflex | `robot.collision_thresholds` | The FR3's own stop (red lights) on external force; raised from panda-py's 20 N so pushing against a virtual wall does not trip it |
 
 Keys in the hardware terminal: `q` quit (stops torque control), `h` clear a speed stop, `r` recover after a robot error (reflex), then torque control restarts.
 

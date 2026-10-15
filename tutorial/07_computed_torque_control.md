@@ -1,6 +1,6 @@
 # Computed torque–style point-to-point motion
 
-So far we either floated ([03](03_grav_comp.md)) or chased a live Cartesian target ([06](06_inverse_kinematics_quadratic_program.md)). Here we do classical **go-to-a-joint-goal** motion: sample a safe goal, **plan a path**, then **track** it with PD + friction feedforward (gravity is handled by the FR3 itself).
+So far we either floated ([03](03_grav_comp.md)) or chased a live Cartesian target ([06](06_inverse_kinematics_quadratic_program.md)). Here we do classical **go-to-a-joint-goal** motion: sample a safe goal, **plan a path**, then **track** it with PD + friction feedforward (plus gravity $g(q)$ from the controller's URDF, [03](03_grav_comp.md)).
 
 “Computed torque” in the soft sense: we cancel known dynamics terms in $\tau_{\mathrm{ff}}$ and let PD clean up the rest.
 
@@ -55,11 +55,11 @@ $$
   = K_p(q_d-q)
   + K_d(\dot q_d-\dot q)
   + \underbrace{F_{\mathrm{jc}}\,\mathrm{sat}(\dot q_d/\phi)}_{\tau_{\mathrm{ff}}}
-  \;\;(+\;g(q)\text{ added by the FR3}).
+  \;+\;g(q).
 $$
 
 - PD pulls the error to zero.
-- Gravity is removed by the robot; the controller must **not** add $g(q)$ ([03](03_grav_comp.md)).
+- $g(q)$ comes from the controller's URDF; the plant adds none (`plant_gravity_comp: false`, [03](03_grav_comp.md)).
 - Coulomb compensation overcomes the FR3’s joint friction (about 1.1 Nm on joints 1–4) when starting and stopping. Toggle it in Viser and compare the tracking error.
 
 The gains are libfranka’s joint-impedance example values,

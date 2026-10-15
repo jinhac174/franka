@@ -1,5 +1,5 @@
-# Collision-aware float in the real (DROID) cell: virtual floor (z = 0.07),
-# front wall (x = 0.70) and right wall (y = -0.50) from scene_real_cell.xml.
+# Collision-aware float in the real (DROID) cell: virtual floor (z = 0.02),
+# front wall (x = 0.85) and left wall (y = +0.50) from scene_real_cell.xml.
 # Robot: run_hardware.py + run_scene_info.py + this with --env_mode real.
 name: col_aware_grav_comp
 ctrl_freq: 1000
@@ -16,9 +16,19 @@ num_arm_joints: 7
 num_ctrl_joints: 7
 default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
 
-# The FR3 (and the sim) compensates gravity itself: no g(q) in tau_ff.
-plant_gravity_comp: true
-arm_damping: 0.5
+# Gravity: the controller sends g(q) from urdf_path itself. The plant does
+# not compensate it (sim env gravity_comp: false; on the FR3, run_hardware
+# gravity_model: controller cancels the robot's own compensation).
+plant_gravity_comp: false
+arm_damping: 0.1
+# Coulomb friction compensation (Nm, joints 1-7): ~70% of the FR3's joint
+# friction (sim model: 1.14 x4, 0.76, 0.44, 0.25), so the arm coasts after a
+# bounce instead of stopping within a centimetre. Only while the wall pushes
+# and friction_comp_time (s) after: while floating, friction holds the arm
+# against the FR3's gravity-model error (with compensation it sags away).
+friction_comp: [0.8, 0.8, 0.8, 0.8, 0.5, 0.3, 0.17]
+friction_comp_vel: 0.02   # rad/s: full compensation above this joint speed
+friction_comp_time: 0.5
 
 # PD gains. Zeroed in the "grav_comp" (free-float) state; applied only when
 # repelling from an obstacle.
@@ -29,65 +39,74 @@ kp_multiplier: [1, 1, 1, 1, 1, 1, 1]
 joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5]
 
 # Repulsive-field tuning: within margin_thr of safty_dist_thr, push away with a
-# velocity that grows to repulsive_coeff as the margin -> 0. Below safty_dist_thr
-# the controller stops (state="collision").
+# velocity that grows to repulsive_coeff as the margin -> 0 (repulsion: qp;
+# below safty_dist_thr it stops, state="collision").
 safty_dist_thr: 0.02
 # 8 cm activation (d0 = safty_dist_thr + magin_thr): at the default pose the
-# wrist is ~29 cm from the front wall (x = 0.70), so it floats freely there.
+# wrist is ~44 cm from the front wall (x = 0.85), so it floats freely there.
 magin_thr: 0.06
 repulsive_coeff: 8
 
-# Potential field in torque instead of the QP (see CollisionAwareGravCompControl):
-# within d0 of an obstacle, F = k (d0 - d) - c (n . v) along the obstacle
-# normal, tau = J^T F; it keeps pushing inside the obstacle.
-repulsion: field
-field_stiffness: 800.0    # N/m: 48 N at 2 cm from the wall
+# Repulsion in torque (see CollisionAwareGravCompControl), tutorial 05's
+# escape velocity along the obstacle normal: within d0 a link point should
+# move away at v* = escape_speed (m / magin_thr - 1)^2 (0 at the band edge,
+# escape_speed at the safety distance and inside), F = velocity_gain (v* - n.v),
+# push only, plus the restitution bounce below. No spring, no brake: the arm
+# is thrown back out and keeps floating, it bounces off the wall.
+# (repulsion: field = position spring that parks the arm at the band edge;
+# qp = tutorial QP + joint PD, stops below safty_dist_thr.)
+repulsion: velocity
+escape_speed: 0.6         # m/s
+velocity_gain: 150.0      # N per m/s: hitting the band at 0.2 m/s -> 30 N back
+# Bounce: leave the band at least this fraction of the speed the link came
+# in with (0 = only the escape velocity: it stops at the band edge).
+restitution: 0.8
 # Keep the push below the FR3 reflex force (fr3.yaml collision_thresholds,
-# 60 N): you feel the wall, and only pushing hard through it stops the robot.
-field_damping: 150.0      # N s/m along the normal (no bouncing)
+# 60 N): only shoving hard through the wall stops the robot.
 field_max_force: 50.0     # N per link point
-# Joint damping (Nm s/rad) while pushing and field_brake_time (s) after:
-# stops the arm once it is out instead of letting it fly off.
-field_brake_damping: [20, 20, 20, 20, 5, 5, 2]
-field_brake_time: 0.5
+# Used by repulsion: field only.
+field_stiffness: 800.0
+field_damping: 80.0
+field_brake_damping: [8, 8, 8, 8, 2, 2, 1]
+field_brake_time: 0.3
 
 # Robot collision primitives to check (names from the env's robot_col_info;
 # "<link>__2" is a second primitive on the same link frame).
 col_link_names: ["fr3_link2", "fr3_link3", "fr3_link4", "fr3_link5", "fr3_link5__2",
                  "fr3_link6", "fr3_link7", "fr3_link7__2", "fr3_gripper", "fr3_gripper__2"]
 # Static obstacle names (must match the geoms of assets/scene/franka_fr3/scene_real_cell.xml).
-obs_names: ["floor", "wall_front", "wall_right"]
+obs_names: ["floor", "wall_front", "wall_left"]
 # link <-> obstacle pairs to distance-check each plan tick. fr3_link2 sits at
 # shoulder height and cannot reach the floor.
 col_pairs:
   - ["fr3_link2", "wall_front"]
-  - ["fr3_link2", "wall_right"]
+  - ["fr3_link2", "wall_left"]
   - ["fr3_link3", "wall_front"]
-  - ["fr3_link3", "wall_right"]
+  - ["fr3_link3", "wall_left"]
   - ["fr3_link3", "floor"]
   - ["fr3_link4", "wall_front"]
-  - ["fr3_link4", "wall_right"]
+  - ["fr3_link4", "wall_left"]
   - ["fr3_link4", "floor"]
   - ["fr3_link5", "wall_front"]
-  - ["fr3_link5", "wall_right"]
+  - ["fr3_link5", "wall_left"]
   - ["fr3_link5", "floor"]
   - ["fr3_link5__2", "wall_front"]
-  - ["fr3_link5__2", "wall_right"]
+  - ["fr3_link5__2", "wall_left"]
   - ["fr3_link5__2", "floor"]
   - ["fr3_link6", "wall_front"]
-  - ["fr3_link6", "wall_right"]
+  - ["fr3_link6", "wall_left"]
   - ["fr3_link6", "floor"]
   - ["fr3_link7", "wall_front"]
-  - ["fr3_link7", "wall_right"]
+  - ["fr3_link7", "wall_left"]
   - ["fr3_link7", "floor"]
   - ["fr3_link7__2", "wall_front"]
-  - ["fr3_link7__2", "wall_right"]
+  - ["fr3_link7__2", "wall_left"]
   - ["fr3_link7__2", "floor"]
   - ["fr3_gripper", "wall_front"]
-  - ["fr3_gripper", "wall_right"]
+  - ["fr3_gripper", "wall_left"]
   - ["fr3_gripper", "floor"]
   - ["fr3_gripper__2", "wall_front"]
-  - ["fr3_gripper__2", "wall_right"]
+  - ["fr3_gripper__2", "wall_left"]
   - ["fr3_gripper__2", "floor"]
 
 plan_freq: 100

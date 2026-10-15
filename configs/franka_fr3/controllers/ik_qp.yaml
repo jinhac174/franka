@@ -56,8 +56,10 @@ mean_mass_matrix_diag: [0.7624, 1.829, 1.2239, 1.1964, 0.1171, 0.1262, 0.0759, 0
 default_kd: [5.0, 8.0, 4.0, 4.0, 1.0, 1.0, 0.5, 0.0, 0.0]
 velocity_control_D_gain: [5.0, 5.0, 5.0, 5.0, 2.0, 2.0, 1.0, 0.0, 0.0]
 
-# Gravity: the FR3 (and the sim) cancels it; the controller must not.
-plant_gravity_comp: true
+# Gravity: the controller sends g(q) from urdf_path itself. The plant does
+# not compensate it (sim env gravity_comp: false; on the FR3, run_hardware
+# gravity_model: controller cancels the robot's own compensation).
+plant_gravity_comp: false
 # Coriolis is NOT compensated by the FR3, so the controller adds C(q,qd)qd.
 do_coriolis_comp: true
 # Coulomb friction FF: tau += Fjc * sat(qd_des / friction_phi).

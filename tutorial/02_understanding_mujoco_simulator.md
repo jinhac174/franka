@@ -82,21 +82,26 @@ $$
 | $\tau_{\mathrm{fric}}$ | Coulomb-like friction (`frictionloss`) — the FR3 joints have about 0.2–1.1 Nm |
 | $\tau_{\mathrm{contact}}$ | Soft contact / constraint forces from MuJoCo |
 | $\tau_{\mathrm{act}}$ | **What your controller asks the motors to produce** |
-| $\tau_{\mathrm{gcomp}}$ | Gravity compensation done by the **robot itself** (see below) |
+| $\tau_{\mathrm{gcomp}}$ | Gravity compensation done by the **plant itself**: 0 in this repo's default (see below) |
 
 You do not need to derive this on day one. You *do* need to remember: **the controller never sets $\ddot q$ directly**; it sets $\tau_{\mathrm{act}}$ (through the actuator model), and physics decides the motion.
 
-### The FR3 compensates gravity for you
+### Who compensates gravity
 
-In torque control, the real FR3’s firmware **always** adds $\tau_{\mathrm{gcomp}} = g(q)$ on top of whatever you command (it knows the arm’s masses and the configured gripper load). It does **not** compensate Coriolis or friction. So on this robot:
+In torque control, the real FR3’s firmware **always** adds its own $g(q)$ on top of whatever you command (from its model of the arm and the gripper load configured in Desk). It does **not** compensate Coriolis or friction.
+
+This repo does not rely on it. As in the original tutorials, **the controller computes $g(q)$** from its URDF and sends it in $\tau_{\mathrm{ff}}$; the plant adds nothing:
+
+- sim: `platform.gravity_comp: false` (MuJoCo applies plain gravity);
+- robot: `run_hardware.py` with `gravity_model: controller` subtracts the FR3's own $g(q)$ every tick ([15](15_real_fr3.md)).
 
 $$
-\tau_{\mathrm{gcomp}} = g(q)
+\tau_{\mathrm{gcomp}} = 0
 \quad\Rightarrow\quad
-\text{gravity cancels; your command only has to handle everything else.}
+\text{the controller's } g(q) \text{ holds the arm, in the sim and on the robot alike.}
 $$
 
-The sim reproduces this with `platform.gravity_comp: true` (MuJoCo’s per-body `gravcomp`, which also applies gravity only). That is the default for every tutorial, because it is what the hardware does.
+`platform.gravity_comp: true` (MuJoCo’s per-body `gravcomp`) reproduces the FR3 firmware instead; [03](03_grav_comp.md) compares the two.
 
 ### How `JointCtrl` becomes $\tau_{\mathrm{act}}$
 
@@ -113,18 +118,18 @@ $$
 |------|----------------------|
 | $K_p(q_{\mathrm{des}}-q)$ | Spring toward a joint pose (impedance, tracking, …) |
 | $K_d(\dot q_{\mathrm{des}}-\dot q)$ | Damper / velocity tracking |
-| $\tau_{\mathrm{ff}}$ | Model-based torque (Coriolis, contact forces, …) — **not** gravity on the FR3 |
+| $\tau_{\mathrm{ff}}$ | Model-based torque: gravity $g(q)$, Coriolis, contact forces, … |
 
 The result is clipped to the FR3 torque limits: 87 Nm for joints 1–4, 12 Nm for joints 5–7.
 
 Special cases you will see often:
 
-- **Gravity compensation (“float”):** $K_p=K_d=0$, $\tau_{\mathrm{ff}}\approx -B\dot q$ (just damping).
+- **Gravity compensation (“float”):** $K_p=K_d=0$, $\tau_{\mathrm{ff}}= g(q) -B\dot q$.
 - **Velocity field tracking:** $K_p=0$, $K_d>0$, $\dot q_{\mathrm{des}}$ from a planner.
 
 ### Double gravity (a common bug)
 
-If the **plant** compensates gravity *and* the controller also sends $g(q)$ in $\tau_{\mathrm{ff}}$, the robot gets **$2g(q)$** and floats upward. Coming from a robot whose controller had to supply $g(q)$, this is the easiest mistake to make on a Franka. Every controller in this repo has a `plant_gravity_comp` flag; it must be `true` for the FR3. [03](03_grav_comp.md) shows what happens when it is wrong.
+If the **plant** compensates gravity *and* the controller also sends $g(q)$ in $\tau_{\mathrm{ff}}$, the robot gets **$2g(q)$** and floats upward; if neither does, it falls. Every controller has a `plant_gravity_comp` flag (here `false`: the controller sends $g(q)$) that must match the plant (`platform.gravity_comp` in the sim, `gravity_model` on the robot). [03](03_grav_comp.md) shows what happens when they do not match.
 
 ### The gripper is a different kind of actuator
 

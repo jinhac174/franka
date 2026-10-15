@@ -173,7 +173,7 @@ python run_controller.py --config configs/calibration_tutorial/controllers/grav_
 python run_camera_calibration.py --config configs/calibration_tutorial/calib_diff_render.yaml
 ```
 
-As everywhere with the FR3, the plant compensates gravity (`platform.gravity_comp: true`) and the controller does not (`plant_gravity_comp: true`, [03](03_grav_comp.md)).
+As everywhere in this repo, the controller compensates gravity (`plant_gravity_comp: false`) and the plant does not (`platform.gravity_comp: false`, [03](03_grav_comp.md)).
 
 The camera images are large LCM packets: do the multicast / receive-buffer setup of section 1 first, or most frames are dropped. Rendering RGB-D needs a GPU to keep up with real time (with software rendering, `MUJOCO_GL=osmesa`, the sim slows down noticeably).
 
@@ -203,7 +203,7 @@ collapsing. On the real FR3 you would do the same by hand-guiding the arm.
 | `calib_camera_info` | env → calib | Intrinsics $K$ + GT OpenCV `T_world2cam` (for scoring only) |
 | `franka_arm_joint_meas` | env → ctrl / calib | 7-DoF arm $q,\dot q,\tau$ |
 | `franka_gripper_joint_meas` | env → calib | The gripper's driver angle (completes the 8-joint URDF configuration) |
-| `franka_arm_joint_ctrl` | **grav-comp → env** | Damping only, $K_p=K_d=0$ (the FR3 cancels gravity itself) |
+| `franka_arm_joint_ctrl` | **grav-comp → env** | $g(q)$ + damping, $K_p=K_d=0$ |
 
 The calibration script **subscribes** to camera + joints and does **not**
 publish joint commands (so it does not fight gravity compensation).
@@ -276,7 +276,7 @@ This is complementary to the classical checkerboard hand–eye path in
 | Symptom | Likely cause |
 |---------|----------------|
 | Timeout waiting for CameraInfo | Env not running / LCM multicast not set |
-| Arm shoots upward | Controller adds $g(q)$ on top of the plant’s (`plant_gravity_comp` must be `true`) |
+| Arm shoots upward / falls | Plant and controller gravity flags do not match (`platform.gravity_comp: false` with `plant_gravity_comp: false`) |
 | Few RGB frames arrive / LCM warns about a small receive buffer | Do the multicast + `rmem` setup of section 1 |
 | `arm_deg` never changes / render stuck at default pose | Joint LCM not updating — confirm env pub channels match calib YAML; watch `updates=` |
 | Empty / tiny SAM mask | Click the robot body, not the background; confirm with ENTER |

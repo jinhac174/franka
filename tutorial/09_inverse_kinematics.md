@@ -93,7 +93,7 @@ Once $q^\star$ is accepted:
 
 $$
 \tau = K_p(q^\star - q) - K_d\dot q
-\;\;(+\;g(q)\text{ added by the FR3}).
+\;+\;g(q).
 $$
 
 This is joint impedance toward a fixed goal — the same spirit as [08](08_impedance_control.md), but with a freshly computed setpoint instead of a fixed home.

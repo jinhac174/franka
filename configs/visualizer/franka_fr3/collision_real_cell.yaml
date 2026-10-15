@@ -1,4 +1,4 @@
-# Viser for the real (DROID) cell: virtual floor / front / right walls.
+# Viser for the real (DROID) cell: virtual floor / front / left walls.
 name: franka_fr3
 vis_freq: 30
 
@@ -26,33 +26,33 @@ franka_fr3:
   # link <-> obstacle pairs (same set as col_aware_real_cell).
   col_pairs:
     - ["fr3_link2", "wall_front"]
-    - ["fr3_link2", "wall_right"]
+    - ["fr3_link2", "wall_left"]
     - ["fr3_link3", "wall_front"]
-    - ["fr3_link3", "wall_right"]
+    - ["fr3_link3", "wall_left"]
     - ["fr3_link3", "floor"]
     - ["fr3_link4", "wall_front"]
-    - ["fr3_link4", "wall_right"]
+    - ["fr3_link4", "wall_left"]
     - ["fr3_link4", "floor"]
     - ["fr3_link5", "wall_front"]
-    - ["fr3_link5", "wall_right"]
+    - ["fr3_link5", "wall_left"]
     - ["fr3_link5", "floor"]
     - ["fr3_link5__2", "wall_front"]
-    - ["fr3_link5__2", "wall_right"]
+    - ["fr3_link5__2", "wall_left"]
     - ["fr3_link5__2", "floor"]
     - ["fr3_link6", "wall_front"]
-    - ["fr3_link6", "wall_right"]
+    - ["fr3_link6", "wall_left"]
     - ["fr3_link6", "floor"]
     - ["fr3_link7", "wall_front"]
-    - ["fr3_link7", "wall_right"]
+    - ["fr3_link7", "wall_left"]
     - ["fr3_link7", "floor"]
     - ["fr3_link7__2", "wall_front"]
-    - ["fr3_link7__2", "wall_right"]
+    - ["fr3_link7__2", "wall_left"]
     - ["fr3_link7__2", "floor"]
     - ["fr3_gripper", "wall_front"]
-    - ["fr3_gripper", "wall_right"]
+    - ["fr3_gripper", "wall_left"]
     - ["fr3_gripper", "floor"]
     - ["fr3_gripper__2", "wall_front"]
-    - ["fr3_gripper__2", "wall_right"]
+    - ["fr3_gripper__2", "wall_left"]
     - ["fr3_gripper__2", "floor"]
 
   # Self-collision pairs: the ones Franka's SRDF leaves enabled (all other

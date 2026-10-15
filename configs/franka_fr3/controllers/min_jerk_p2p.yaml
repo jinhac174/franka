@@ -26,8 +26,10 @@ kd_scale: 1.0
 fjc_scale: 1.0
 arm_damping: 0.5  # soft viscous damping in grav mode (arm only)
 
-# Gravity: the FR3 (and the sim) cancels it; the controller must not.
-plant_gravity_comp: true
+# Gravity: the controller sends g(q) from urdf_path itself. The plant does
+# not compensate it (sim env gravity_comp: false; on the FR3, run_hardware
+# gravity_model: controller cancels the robot's own compensation).
+plant_gravity_comp: false
 # Coulomb friction FF: tau += Fjc * sat(qd_des / friction_phi).
 # Fjc = the FR3 joint frictionloss in the MJCF; re-identify on hardware.
 do_friction_comp: true

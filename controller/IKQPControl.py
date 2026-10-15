@@ -129,6 +129,17 @@ class IKQPController(BaseController):
         # Max demanded gap-opening speed when already inside the safety margin (m/s).
         self._col_sep_rate_max = float(config.get("col_sep_rate_max", 0.25))
         self._use_position_pd = bool(config.get("use_position_pd", False))
+        # tracking: velocity = damping on (qd_des - qd) only (the tutorial;
+        # too weak for real joint friction); reference = integrate q_ref +=
+        # qd_des dt and track it with ref_kp / ref_kd, so a stuck joint builds
+        # up torque until it moves, and the goal is held stiffly.
+        self._tracking = str(config.get("tracking", "velocity"))
+        if self._tracking not in ("velocity", "reference"):
+            raise ValueError(f"tracking must be 'velocity' or 'reference', got {self._tracking!r}")
+        self._ref_kp = np.asarray(config.get("ref_kp", [0.0] * 7), dtype=np.float64)
+        self._ref_kd = np.asarray(config.get("ref_kd", [0.0] * 7), dtype=np.float64)
+        self._ref_max_lead = float(config.get("ref_max_lead", 0.05))  # rad
+        self._q_ref = None
 
         # Planning rate (FCL + OSQP). Keep well below ctrl_freq.
         self._plan_freq = float(config.get("plan_freq", 100.0))
@@ -183,7 +194,7 @@ class IKQPController(BaseController):
         self._fcl_robot: dict = {}
         self._fcl_static: dict = {}
 
-        print("[IKQP] Keys: w/s ±x, a/d ±y, r/f ±z, [/] step, h home, p pause, q quit.")
+        print("[IKQP] Keys: w/s ±x, a/d ±y, r/f ±z, [/] step, h reset to default pose, p pause, q quit.")
         print(f"[IKQP] ctrl_freq={self._ctrl_freq} Hz, plan_freq={self._plan_freq} Hz")
 
     # ------------------------------------------------------------------ init
@@ -197,10 +208,15 @@ class IKQPController(BaseController):
         print("[IKQP] Initialized with FCL geoms.")
 
     def _wait_for_col_geoms(
-        self, que: Queue, label: str, timeout_s: float = 2.0
+        self, que: Queue, label: str, timeout_s: float = 60.0
     ) -> dict:
         tic = time.time()
+        warned = False
         while True:
+            if not warned and time.time() - tic > 2.0:
+                warned = True
+                print(f"[IKQP] Waiting for {label} collision information "
+                      "(sim: run_env.py; robot: run_scene_info.py) ...")
             if not que.empty():
                 msg = que.get()
                 if not isinstance(msg, ColInfoData):
@@ -255,10 +271,16 @@ class IKQPController(BaseController):
         print(msg)
 
     def _enter_home_mode(self) -> None:
+        # Reset: the arm goes back to default_q (joint space) and the target
+        # moves to the TCP at default_q, so the next nudge starts from there.
+        p_home, _, _, _ = self._task_point_and_jacobian(self._q_home, self._pin_data_ctrl)
         with self._meas_lock:
             self._ctrl_mode = "home"
             self._qd_des_filt[:] = 0.0
-        print("[IKQP] Mode → home (joint-space go to default_q)")
+            self._p_des = p_home.copy()
+            self._target_initialized = True
+        print("[IKQP] Reset → default pose (joint space); target → "
+              f"[{p_home[0]:.3f}, {p_home[1]:.3f}, {p_home[2]:.3f}]")
 
     def _handle_key(self, key: str) -> None:
         if key in ("p", "q"):
@@ -679,7 +701,22 @@ class IKQPController(BaseController):
         self._qd_des_filt = a * self._qd_des + (1.0 - a) * self._qd_des_filt
         qd_des = self._qd_des_filt
 
-        if self._at_goal or not np.any(np.abs(self._qd_des) > 1e-9):
+        if self._tracking == "reference":
+            n = self._num_ctrl_joints
+            if self._q_ref is None:
+                self._q_ref = q.copy()
+            moving = not self._at_goal and np.any(np.abs(self._qd_des) > 1e-9)
+            if not moving:
+                qd_des = np.zeros(self._n_x)
+                self._qd_des_filt[:] = 0.0
+            self._q_ref = self._q_ref + qd_des * self._ctrl_dt
+            # Bounded lead: a blocked joint (wall, limit) does not wind up.
+            self._q_ref = np.clip(self._q_ref, q - self._ref_max_lead, q + self._ref_max_lead)
+            q_des = self._q_ref
+            kp = np.zeros(self._n_x)
+            kd = np.zeros(self._n_x)
+            kp[:n], kd[:n] = self._ref_kp[:n], self._ref_kd[:n]
+        elif self._at_goal or not np.any(np.abs(self._qd_des) > 1e-9):
             if mode == "home" and self._at_goal:
                 q_des = self._q_home
             else:

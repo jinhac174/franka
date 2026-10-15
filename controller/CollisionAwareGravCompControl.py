@@ -43,6 +43,7 @@ class FieldPair:
     n: np.ndarray  # unit push direction (obstacle -> link)
     d: float  # signed distance at planning time (< 0: inside the obstacle)
     p: np.ndarray  # nearest link point at planning time
+    key: str = ""  # "<link>|<obstacle>": remembers the speed it came in with
 
 class CollisionAwareGravCompController(BaseController):
     """Gravity compensation with FCL distance checks and a repulsion.
@@ -58,6 +59,16 @@ class CollisionAwareGravCompController(BaseController):
       ``field_damping``, at most ``field_max_force``), ``tau = J^T F``. It keeps
       pushing inside the obstacle (signed distance), so the arm is driven back
       out. Computed at the control rate from the planner's nearest points.
+    - ``velocity``: tutorial 05's escape velocity, tracked in torque along the
+      obstacle normal only. Within ``d0`` a link point should move outward at
+      ``v* = escape_speed (m / magin_thr - 1)^2`` (m/s; ``m = d -
+      safty_dist_thr``, full ``escape_speed`` below the safety distance);
+      ``F = velocity_gain (v* - n . v)``, clipped to ``[0, field_max_force]``.
+      The escape velocity alone only returns the arm to the band edge (v* is
+      ~0 there), so it also bounces: the target is at least ``restitution``
+      times the fastest inward speed seen since the point entered the band.
+      No spring and no brake: the arm leaves the band at that speed and keeps
+      floating; sideways motion stays free.
 
     Threading
     ---------
@@ -86,6 +97,16 @@ class CollisionAwareGravCompController(BaseController):
         # True when the robot compensates gravity itself (FR3): no g(q) in tau_ff.
         self._plant_gravity_comp = bool(config.get("plant_gravity_comp", False))
         self._arm_damping = float(config.get("arm_damping", 0.01))
+        # Coulomb friction compensation (Nm per joint, in the direction of
+        # motion; smooth below friction_comp_vel rad/s), only while the wall
+        # pushes and friction_comp_time after it, so a bounce coasts. Not
+        # while floating: friction is what holds the arm against the FR3's
+        # gravity-model error, without it a slow sag speeds itself up.
+        self._fric_comp = np.asarray(
+            config.get("friction_comp", [0.0] * self._num_joints), dtype=np.float64
+        )
+        self._fric_comp_vel = float(config.get("friction_comp_vel", 0.02))
+        self._fric_comp_time = float(config.get("friction_comp_time", 0.5))
 
         self._joint_velocity_limit = np.asarray(
             config["joint_velocity_limit"], dtype=np.float64
@@ -106,12 +127,18 @@ class CollisionAwareGravCompController(BaseController):
         self._repulsive_coeff = float(config.get("repulsive_coeff", 10.0))
 
         self._repulsion = str(config.get("repulsion", "qp"))
-        if self._repulsion not in ("qp", "field"):
-            raise ValueError(f"repulsion must be 'qp' or 'field', got {self._repulsion!r}")
+        if self._repulsion not in ("qp", "field", "velocity"):
+            raise ValueError(
+                f"repulsion must be 'qp', 'field' or 'velocity', got {self._repulsion!r}"
+            )
         self._field_d0 = self._safety_dist_thr + self._margin_thr
         self._field_k = float(config.get("field_stiffness", 1000.0))
         self._field_c = float(config.get("field_damping", 60.0))
         self._field_f_max = float(config.get("field_max_force", 150.0))
+        self._velocity_gain = float(config.get("velocity_gain", 150.0))  # N / (m/s)
+        self._escape_speed = float(config.get("escape_speed", 0.3))  # m/s
+        self._restitution = float(config.get("restitution", 0.0))
+        self._v_in: dict[str, float] = {}  # pair key -> fastest inward speed in the band
         # Brake: extra joint damping while the field pushes and for
         # field_brake_time after, so the spring's energy does not throw the
         # (otherwise free-floating) arm away from the obstacle.
@@ -373,7 +400,7 @@ class CollisionAwareGravCompController(BaseController):
         dict_col_links = self._get_col_links(q)
         dict_col_obstacles = self._get_col_obstacles()
         collision_data = self._get_col_data(dict_col_links, dict_col_obstacles)
-        if self._repulsion == "field":
+        if self._repulsion in ("field", "velocity"):
             return self._field_plan(dict_col_links, collision_data)
 
         is_healthy = True
@@ -439,6 +466,7 @@ class CollisionAwareGravCompController(BaseController):
                     n=n,
                     d=d,
                     p=p_link,
+                    key=f"{link_name}|{obs_name}",
                 )
             )
         if not pairs:
@@ -448,6 +476,9 @@ class CollisionAwareGravCompController(BaseController):
             state=state, qd_des=np.zeros(self._n_x), success=True, field_pairs=pairs
         )
 
+    def _friction_torque(self, qd: np.ndarray) -> np.ndarray:
+        return self._fric_comp * np.tanh(qd / self._fric_comp_vel)
+
     def _field_torque(self, q: np.ndarray, qd: np.ndarray) -> np.ndarray:
         """tau = sum J_point^T F n over the planner's pairs, at the current q."""
         tau = np.zeros(self._n_x)
@@ -456,6 +487,9 @@ class CollisionAwareGravCompController(BaseController):
         model, data = self._pin_model, self._pin_data_ctrl
         pin.computeJointJacobians(model, data, q)  # also runs forward kinematics
         pin.updateFramePlacements(model, data)
+        if self._v_in:  # forget pairs the planner no longer reports
+            live = {fp.key for fp in self._field_pairs}
+            self._v_in = {k: v for k, v in self._v_in.items() if k in live}
         for fp in self._field_pairs:
             oMf = data.oMf[fp.frame_id]
             r = oMf.rotation @ fp.delta
@@ -463,13 +497,22 @@ class CollisionAwareGravCompController(BaseController):
             # Distance now: the plan's distance moved along the normal.
             d = fp.d + float(fp.n @ (p - fp.p))
             if d >= self._field_d0:
+                self._v_in.pop(fp.key, None)  # out of the band: next entry is new
                 continue
             J6 = pin.getFrameJacobian(
                 model, data, fp.frame_id, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED
             )
             Jp = J6[:3, :] - _skew(r) @ J6[3:, :]  # Jacobian of the link point
             v_n = float(fp.n @ (Jp @ qd))
-            f = self._field_k * (self._field_d0 - d) - self._field_c * v_n
+            if self._repulsion == "velocity":
+                m = d - self._safety_dist_thr
+                w = 1.0 if m < 0 else (m / self._margin_thr - 1.0) ** 2
+                v_in = max(self._v_in.get(fp.key, 0.0), -v_n)
+                self._v_in[fp.key] = v_in
+                v_target = max(self._escape_speed * w, self._restitution * v_in)
+                f = self._velocity_gain * (v_target - v_n)
+            else:
+                f = self._field_k * (self._field_d0 - d) - self._field_c * v_n
             f = float(np.clip(f, 0.0, self._field_f_max))  # push only, never pull
             if f > 0.0:
                 self._field_last_push_t = self._cur_time
@@ -570,12 +613,17 @@ class CollisionAwareGravCompController(BaseController):
             )
         arm = slice(0, self._num_arm_joints)
         tau_ff[arm] += -self._arm_damping * qd[arm]
-        if self._repulsion == "field":
+        if self._cur_time - self._field_last_push_t < self._fric_comp_time:
+            tau_ff += self._friction_torque(qd)
+        if self._repulsion in ("field", "velocity"):
             tau_ff += self._field_torque(q, qd)
-            if self._cur_time - self._field_last_push_t < self._field_brake_time:
+            if (
+                self._repulsion == "field"
+                and self._cur_time - self._field_last_push_t < self._field_brake_time
+            ):
                 tau_ff -= self._field_brake_kd * qd
 
-        if self._ctrl_state == "grav_comp" or self._repulsion == "field":
+        if self._ctrl_state == "grav_comp" or self._repulsion != "qp":
             kp = np.zeros_like(self._kp)
             kd = np.zeros_like(self._kd)
         else:

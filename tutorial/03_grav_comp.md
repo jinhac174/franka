@@ -2,13 +2,13 @@
 
 Your first real control law: make the arm feel **weightless** (almost), without telling it *where* to go.
 
-On the FR3 this is special: the robot already compensates gravity itself in torque mode ([02](02_understanding_mujoco_simulator.md)). So this tutorial does it twice — once the way the FR3 runs, and once in a **sim-only** mode where *you* compute $g(q)$, so you see exactly what the firmware does for you.
+Here the controller computes $g(q)$ itself, exactly as in the original tutorial. The FR3 can compensate gravity on its own in torque mode ([02](02_understanding_mujoco_simulator.md)), but this repo does not rely on that: on the robot, `run_hardware.py` cancels the FR3's own compensation (`gravity_model: controller` in `configs/franka_fr3/hardware/fr3.yaml`), so the same $g(q)$ holds the arm in the sim and on the robot. Section B shows the FR3's own way for comparison.
 
 ---
 
 ## 1. Run & LCM communication
 
-### A. The FR3 way (plant compensates gravity)
+### A. The controller computes $g(q)$ (default, sim and robot)
 
 ```bash
 python run_env.py --config configs/franka_fr3/env/default.yaml
@@ -18,19 +18,21 @@ python run_controller.py --config configs/franka_fr3/controllers/grav_comp.yaml
 python run_visualizer.py --config configs/visualizer/franka_fr3/default.yaml
 ```
 
-### B. Sim-only: the controller computes $g(q)$
+On the robot, replace the first line with `python run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml` and add `--env_mode real` to the controller ([15](15_real_fr3.md)).
 
-Turn the plant’s compensation off and the controller’s on:
+### B. Sim-only: the plant compensates gravity (what the FR3 firmware does)
+
+Turn the plant's compensation on and the controller's off:
 
 ```bash
-python run_env.py --config configs/franka_fr3/env/default.yaml --platform.gravity_comp false
+python run_env.py --config configs/franka_fr3/env/default.yaml --platform.gravity_comp true
 
-python run_controller.py --config configs/franka_fr3/controllers/grav_comp.yaml --plant_gravity_comp false
+python run_controller.py --config configs/franka_fr3/controllers/grav_comp.yaml --plant_gravity_comp true
 
 python run_visualizer.py --config configs/visualizer/franka_fr3/default.yaml
 ```
 
-This mode does not exist on the real FR3 (its gravity compensation cannot be disabled). It is here so you can see the math working.
+On the robot this is `gravity_model: robot` (the FR3's model plus the Desk payload) with every controller at `plant_gravity_comp: true`.
 
 | Key | Action |
 |-----|--------|
@@ -40,11 +42,11 @@ This mode does not exist on the real FR3 (its gravity compensation cannot be dis
 
 In both A and B the arm **holds its pose against gravity** but does **not** spring back to a home configuration. Drag a link in the MuJoCo viewer (double-click a body, then Ctrl + right-drag) and let go: it stays roughly where you left it. The FR3 joints have noticeable friction, so small pushes may not move it at all.
 
-In B the arm may drift very slightly (on the order of a milliradian): the URDF the controller uses and the MuJoCo model differ a little in the gripper’s mass. That is the *model mismatch* discussed below.
+In A the arm may drift very slightly (on the order of a milliradian): the URDF the controller uses and the MuJoCo model differ a little in the gripper’s mass. That is the *model mismatch* discussed below.
 
 ### Try: double gravity
 
-Run the env as in **A** but the controller as in **B** (`--plant_gravity_comp false` only). Now gravity is cancelled twice; the arm drifts upward (about 0.3 rad in the first 3 s). If you ever see a Franka “float up” when a controller starts, this is the first thing to check.
+Run the env as in **B** but the controller as in **A** (`--platform.gravity_comp true` only). Now gravity is cancelled twice; the arm drifts upward (about 0.3 rad in the first 3 s). If you ever see a Franka “float up” when a controller starts, this is the first thing to check. (On the robot, `run_hardware.py` refuses the opposite mistake: with `gravity_model: controller`, a controller whose first command carries no $g(q)$ is not followed.)
 
 ### LCM (same as quick start)
 
@@ -52,7 +54,7 @@ Run the env as in **A** but the controller as in **B** (`--plant_gravity_comp fa
 |---------|-----------|-----------|
 | `franka_arm_joint_meas` | env → ctrl | Arm $q,\dot q$ |
 | `franka_gripper_joint_meas` | env → viz | Gripper driver angle (Viser draws the fingers; the controller's model has the gripper rigid) |
-| `franka_arm_joint_ctrl` | ctrl → env | A: $\tau_{\mathrm{ff}}=-B\dot q$. B: $\tau_{\mathrm{ff}}=g(q)-B\dot q$. Always $K_p=K_d=0$ |
+| `franka_arm_joint_ctrl` | ctrl → env | A: $\tau_{\mathrm{ff}}=g(q)-B\dot q$. B: $\tau_{\mathrm{ff}}=-B\dot q$. Always $K_p=K_d=0$ |
 
 ---
 
@@ -111,7 +113,7 @@ So the robot coasts and eventually stops. Importantly, **every configuration wit
 
 ### Model mismatch (gentle warning)
 
-If the model's masses differ from reality, residual gravity remains and the arm slowly drifts. In mode B you see this directly (URDF vs MuJoCo gripper mass). On the real FR3 the same issue shows up as the **end-effector load**: the firmware compensates the arm plus whatever gripper mass is configured in Franka Desk. If you attach something heavier and do not update that setting, the arm sags. Treat perfect floating as a modeling assumption, not magic.
+If the model's masses differ from reality, residual gravity remains and the arm slowly drifts. In mode A you see this directly (URDF vs MuJoCo gripper mass). On the real FR3 it is the URDF (`fr3_robotiq_rigid.urdf`: arm + the Robotiq as a rigid 0.925 kg payload) against the real arm; with `gravity_model: robot` it is the FR3's own model plus the gripper mass configured in Franka Desk. Treat perfect floating as a modeling assumption, not magic.
 
 ---
 
@@ -121,7 +123,8 @@ If the model's masses differ from reality, residual gravity remains and the arm 
 |-------|------|
 | `controller/GravCompControl.py` | Each control tick: read $q$, compute $g(q)$ unless `plant_gravity_comp`, subtract arm damping, publish `JointCtrl` for the 7 arm joints |
 | `configs/franka_fr3/controllers/grav_comp.yaml` | `ctrl_freq`, URDF path, `plant_gravity_comp`, `arm_damping`, joint↔channel map |
-| `SimFrankaFR3.modify_mjspec` | How the sim reproduces the FR3’s own gravity compensation |
+| `SimFrankaFR3.modify_mjspec` | How the sim reproduces the FR3’s own gravity compensation (mode B, `platform.gravity_comp: true`) |
+| `HardwareFrankaFR3` (`gravity_model`) | On the robot: cancel the FR3's compensation so the controller's $g(q)$ holds the arm |
 
 **Reading tip:** find where `kp` and `kd` are set to zero. That single choice is what distinguishes “float” from “servo to a pose.”
 

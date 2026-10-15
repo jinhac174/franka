@@ -19,10 +19,10 @@ platform:
   # controller's default_q so the sim starts at the target.
   default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
   default_gripper_width: 0.085
-  # true = plant compensates gravity, exactly like the real FR3 in torque
-  # control. Controllers must then NOT add g(q) (plant_gravity_comp: true in
-  # the controller config). Set false only for the tutorial-03 experiment.
-  gravity_comp: true
+  # The plant does NOT compensate gravity: the controllers send g(q)
+  # (plant_gravity_comp: false), as on the FR3 with gravity_model: controller.
+  # true = MuJoCo cancels it, like the FR3's own compensation.
+  gravity_comp: false
   arm_joint_meas_freq: 1000
   gripper_meas_freq: 100
 

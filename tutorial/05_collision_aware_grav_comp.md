@@ -99,10 +99,14 @@ Every millisecond:
 $$
 q_{\mathrm{des}} = q + \dot q_{\mathrm{des}}\,\Delta t,
 \qquad
-\tau_{\mathrm{ff}} = - b\,\dot q_{\mathrm{arm}},
+\tau_{\mathrm{ff}} = g(q) - b\,\dot q_{\mathrm{arm}},
 $$
 
-and the PD gains track the latest $\dot q_{\mathrm{des}}$ from the plan mailbox. In the grav-comp state the gains are zero, so the arm floats. As in [03](03_grav_comp.md), gravity itself is cancelled by the FR3 (`plant_gravity_comp: true`), not by $\tau_{\mathrm{ff}}$.
+and the PD gains track the latest $\dot q_{\mathrm{des}}$ from the plan mailbox. In the grav-comp state the gains are zero, so the arm floats. As in [03](03_grav_comp.md), $g(q)$ comes from the controller's URDF (`plant_gravity_comp: false`); the plant adds none.
+
+### On the real robot: `col_aware_real_cell.yaml`
+
+The real-cell config (virtual floor, front and left walls, [15](15_real_fr3.md)) keeps Steps A–C but replaces the QP + joint PD (`repulsion: qp`, which stops below the safety distance and stiffens every joint) with `repulsion: velocity`: the same escape velocity $v^\star = \alpha(m/d_{\mathrm{margin}}-1)^2\,\hat n$, tracked in torque along $\hat n$ only, $F = k_v(v^\star - \hat n^\top v)$, push only, capped below the FR3's collision reflex. Below the safety distance it keeps pushing out instead of stopping. Plain velocity tracking acts like a damper and parks the arm at the band edge, so a `restitution` term also sends a link back out at a fraction of the speed it came in with, and friction compensation runs briefly after a push so the bounce coasts. The arm bounces off the walls instead of locking there.
 
 ---
 

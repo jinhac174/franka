@@ -63,7 +63,7 @@ $$
 \tau
   = K_q(q_{\mathrm{nom}}-q)
   - D_q\dot q
-  \;\;(+\;g(q)\text{ added by the FR3}).
+  \;+\;g(q).
 $$
 
 The gains are libfranka’s joint-impedance example values, $K_q=\mathrm{diag}(600,600,600,600,250,150,50)$, $D_q=\mathrm{diag}(50,50,50,20,20,20,10)$.
@@ -97,7 +97,7 @@ Command a body wrench and map it to joints:
 $$
 F = K\xi - D V_b,
 \qquad
-\tau = J_b(q)^\top F \;\;(+\;g(q)\text{ added by the FR3}).
+\tau = J_b(q)^\top F \;+\;g(q).
 $$
 
 The defaults are libfranka’s `cartesian_impedance_control` example values: $k_t = 150$ N/m, $k_r = 10$ Nm/rad, $d = 2\sqrt{k}$.

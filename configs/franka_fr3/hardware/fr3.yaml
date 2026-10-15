@@ -23,6 +23,24 @@ robot:
   # Desk > Settings > End effector: set the load to the gripper, 0.925 kg with
   # its centre of mass 0.052 m along the flange z axis; the FR3's gravity
   # compensation uses it.
+  # Who holds the arm against gravity.
+  #   controller = cancel the FR3's own compensation every tick; the controller
+  #     sends g(q) (all controller configs: plant_gravity_comp: false, the
+  #     same URDF). A controller whose first command lacks gravity on the
+  #     big joints is refused (the arm keeps holding). The hold (no fresh
+  #     command) uses gravity_urdf.
+  #   robot = the FR3's own compensation (its model + Desk payload);
+  #     controllers then need plant_gravity_comp: true.
+  #   urdf = cancel it and add gravity_urdf here, for any controller.
+  gravity_model: controller
+  gravity_urdf: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
+  # Extra load on top of Desk's (DROID: wrist ZED camera + 3D-printed mount,
+  # off the gripper axis: without it the arm sinks in some wrist poses).
+  # Measure it with scripts/identify_payload.py (run_hardware stopped) and
+  # uncomment:
+  # load:
+  #   mass: 0.15             # kg
+  #   com: [0.0, 0.0, 0.0]   # m, flange frame
 
 gripper:
   backend: auto            # robotiq = the 2F-85 over USB (Modbus RTU); fake = simulated;
@@ -40,8 +58,12 @@ safety:
   # q_des is clamped to q +/- this (rad): a controller that jumps its set-point
   # far away only gets a bounded spring force.
   max_joint_error: 0.1
-  # Above these joint speeds (rad/s) the arm holds until you press h.
+  # Joint speed limits (rad/s). velocity_limit: brake = damp the speed above
+  # the limit (vel_brake_kd, Nm per rad/s of excess) and keep following the
+  # controller; stop = hold the pose until you press h.
   max_joint_vel: [2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0]
+  velocity_limit: brake
+  vel_brake_kd: [20, 20, 20, 20, 5, 5, 2]
   # No command for this long (s): hold the current pose with hold_kp / hold_kd.
   ctrl_timeout: 0.1
   hold_kp: [300, 300, 300, 300, 125, 75, 25]
