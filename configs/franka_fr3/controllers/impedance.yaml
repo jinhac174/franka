@@ -15,13 +15,16 @@ task_frame: fr3_gripper_tcp
 mode: joint  # start in joint impedance; press `t` for SE(3) task
 
 # Nominal configuration (task nominal = FK(task_frame, default_q)).
-default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
+default_q: [0.0, 0.0, 0.0, -1.5707963, 0.0, 1.5707963, 0.0]
 
 # Joint-space impedance: τ = Kq (q_nom − q) − Dq q̇.
-# libfranka's joint-impedance example gains (safe on the real FR3).
-# Fingers 0: they belong to the gripper API.
-kq: [600, 600, 600, 600, 250, 150, 50]
-dq: [50, 50, 50, 20, 20, 20, 10]
+# Critically damped, the RoPhiTutorial recipe: kq_i = dq_i^2 / (4 M_ii), with
+# M_ii = diag of the FR3 + Robotiq mass matrix at default_q (incl. armature):
+# [1.7099, 3.0518, 1.6772, 1.2455, 0.1258, 0.1365, 0.0746].
+# (Not libfranka's example gains [600 x4, 250, 150, 50]: ~10x stiffer.)
+# Real robot: impedance_real.yaml (softer).
+dq: [20, 25, 15, 15, 5, 5, 1.5]
+kq: [58.5, 51.2, 33.5, 45.2, 49.7, 45.8, 7.5]
 kq_scale: 1.0
 dq_scale: 1.0
 
@@ -29,12 +32,13 @@ dq_scale: 1.0
 #   ξ = log(T^{-1} T_nom)^∨ ∈ ℝ⁶  (ν, ω)
 #   F = K ξ − D V_b,  τ = J_b^⊤ F
 # K = diag(kt_trans I₃, kt_rot I₃), same pattern for D.
-# libfranka's cartesian_impedance_control example: 150 N/m, 10 Nm/rad,
-# damping 2*sqrt(K).
-kt_trans: 150.0
-kt_rot: 10.0
-dt_trans: 24.5
-dt_rot: 6.3
+# As in RoPhiTutorial (200 N/m, damping 30); kt_rot raised from its 5 Nm/rad
+# (light Flexiv palm) for the FR3 wrist friction + Robotiq, dt_rot ~
+# 2 sqrt(kt_rot M_77) (critically damped).
+kt_trans: 200.0
+kt_rot: 20.0
+dt_trans: 30.0
+dt_rot: 2.0
 kt_trans_scale: 1.0
 kt_rot_scale: 1.0
 dt_trans_scale: 1.0

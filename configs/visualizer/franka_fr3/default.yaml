@@ -13,3 +13,14 @@ franka_fr3:
   urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq.urdf
   # Optional yourdfpy mesh_dir override; leave blank to use the URDF's own paths.
   mesh_dir: ""
+
+  # Static furniture of the cell, drawn as-is (visual only): the enclosure
+  # from RoPhiTutorial (Rizon4_viser.urdf "enclosure"), at the same place
+  # relative to the robot base.
+  scene_meshes:
+    - name: enclosure
+      path: assets/scene/franka_fr3/meshes/cell/enclosure_decimated.STL
+      scale: 0.001
+      xyz: [-0.293, 0.482, -0.091]
+      rpy: [1.57, 0.0, 0.0]
+      color: [200, 200, 205]

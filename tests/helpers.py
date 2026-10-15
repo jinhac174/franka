@@ -104,7 +104,7 @@ class Listener:
 # --------------------------------------------------------------------------
 ENV = "run_env.py --vis_mode vis_off --config"
 CTRL = "run_controller.py --config"
-HOME_Q = [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
+HOME_Q = [0.0, 0.0, 0.0, -1.5707963, 0.0, 1.5707963, 0.0]
 URDF = "assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf"
 
 

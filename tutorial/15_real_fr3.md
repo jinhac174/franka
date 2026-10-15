@@ -4,8 +4,8 @@ Everything so far ran in MuJoCo. On the robot, exactly one process changes: `run
 
 ```
                  sim                                   real robot
-run_env.py  (MuJoCo, SimFrankaFR3)     ->     run_hardware.py (panda-py -> FR3, Modbus -> Robotiq 2F-85)
-                                              run_scene_info.py (collision geometry of your cell)
+run_env.py  (MuJoCo, SimFrankaFR3)     ->     run_hardware.py (panda-py -> FR3, Modbus -> Robotiq 2F-85,
+                                                               + collision geometry of your cell)
 run_controller.py --config ...         ->     run_controller.py --config ... --env_mode real
 run_visualizer.py --config ...         ->     (unchanged)
 ```
@@ -76,15 +76,11 @@ Increase risk one step at a time, with the user stop in hand:
 3. **Gravity compensation** ([03](03_grav_comp.md)): start the grav-comp controller with `--env_mode real`. Hand-guide the arm: it floats. If it drifts, check the gripper load in Desk (0.925 kg).
 4. **Visualizer:** `run_visualizer.py --config configs/visualizer/franka_fr3/default.yaml` should mirror the real arm.
 5. **Impedance** ([08](08_impedance_control.md)), joint mode first, with lowered gains (`--kq_scale 0.3`).
-6. **Collision-aware controllers** ([05](05_collision_aware_grav_comp.md)–[07](07_computed_torque_control.md), [09](09_inverse_kinematics.md)): first describe your cell — walls, table — in a scene XML (`floor`, `wall_*`, `table*`, `obs_*` geoms) and publish it:
-   ```bash
-   python run_scene_info.py --config configs/franka_fr3/hardware/scene_info.yaml
-   ```
-   The default scene’s walls are placeholders.
+6. **Collision-aware controllers** ([05](05_collision_aware_grav_comp.md)–[07](07_computed_torque_control.md), [09](09_inverse_kinematics.md)): first describe your cell — walls, table — in a scene XML (`floor`, `wall_*`, `table*`, `obs_*` geoms). `run_hardware.py` publishes it (`scene_info:` in `fr3.yaml`, default `scene_real_cell.xml`: virtual floor, front and left walls), as `run_env.py` does in the sim. `run_scene_info.py` is the stand-alone version.
 7. **Gripper:** the grasping controllers send real `move` / `grasp` commands. The 2F-85 squeezes with at least 20 N.
 8. **Grasping with perception** (section 6).
 
-`scripts/launch.sh <target> real` starts the processes of a step in tmux, e.g. `scripts/launch.sh grav_comp real` or `scripts/launch.sh ik_qp real` (with `run_scene_info.py`).
+`scripts/launch.sh <target> real` starts the processes of a step in tmux, e.g. `scripts/launch.sh grav_comp real` or `scripts/launch.sh ik_qp real`.
 
 ---
 
@@ -105,7 +101,7 @@ Increase risk one step at a time, with the user stop in hand:
 | `robot_platform/hardware/franka_fr3/HardwareFrankaFR3.py` | Command law, safety layer, gripper threads; `PandaPyBackend` / `FakeBackend` |
 | `robot_platform/hardware/franka_fr3/robotiq.py` | Robotiq 2F-85 driver (Modbus RTU), and a fake gripper behind the same protocol |
 | `configs/franka_fr3/hardware/fr3.yaml` | Hostname, gripper port, safety limits, channels |
-| `run_scene_info.py`, `configs/franka_fr3/hardware/scene_info.yaml` | Collision geometry of the real cell |
+| `robot_platform/hardware/franka_fr3/scene_info.py` (`fr3.yaml` `scene_info:`), `run_scene_info.py` | Collision geometry of the real cell (published by `run_hardware.py`; stand-alone script) |
 | `run_pose_bridge.py`, `configs/franka_fr3/perception/pose_bridge.yaml` | FoundationPose pose -> `franka_object_pose` |
 | `scripts/preflight.py`, `scripts/launch.sh` | Workstation check, tmux launcher |
 | `tests/unit/test_hardware_safety.py`, `tests/integration/test_real_pipeline.py` | Command law and safety layer; fake-robot pipeline |
@@ -131,7 +127,7 @@ Before the first real grasp:
 
 1. **Calibrate the camera** ([14](14_diff_camera_calibration.md)) and put the extrinsics in `configs/sensors/zed/droid.yaml` (`ext1.tf_link_to_cam`; the values there are placeholders). The pipeline uses one external ZED 2 (`ext1`); the wrist ZED Mini is published too but nothing uses its pose yet.
 2. **Check the pose** without the arm moving: run the sensors, perception and the bridge, plus the visualizer, and compare the object with reality. Move the object, and the pose should follow.
-3. **Describe the table** in the scene used by `run_scene_info.py`, so the arm keeps clear of it.
+3. **Describe the table** in the scene XML of `fr3.yaml`'s `scene_info:`, so the arm keeps clear of it.
 4. Run it (the configs are for the YCB mustard bottle; change `object_config`, `fp_mesh_file` and the FoundationPose `mesh_file` together):
    ```bash
    scripts/launch.sh grasp_perception real        # or force_grasp_perception

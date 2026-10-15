@@ -1,0 +1,51 @@
+FR3 (DROID cell) - pane commands, run from ~/jwjh/franka with `conda activate franka`
+
+Pane 1 = hardware   Pane 2 = controller   Pane 3 = Viser   Pane 4 = LCM log (optional)
+Start order: 1 -> 2 -> 3 (-> 4). Keep the user stop in hand.
+Pane 1 also publishes the virtual walls (floor z=0.02, front x=0.85, left y=+0.50).
+Viser: http://localhost:8080
+Hardware keys (pane 1): q quit, h clear a velocity stop, r recover after a reflex (red lights)
+
+
+1. Gravity compensation (arm floats)
+------------------------------------
+Pane 1:  python run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml
+Pane 2:  python run_controller.py --config configs/franka_fr3/controllers/grav_comp.yaml --env_mode real
+Pane 3:  python run_visualizer.py --config configs/visualizer/franka_fr3/default.yaml
+Pane 4:  python scripts/lcm_echo.py franka_arm_joint_meas franka_arm_joint_ctrl
+
+Keys (pane 2): p pause, q quit
+
+
+2. Collision-aware gravity compensation (floats, bounces off the virtual walls)
+-------------------------------------------------------------------------------
+Pane 1:  python run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml
+Pane 2:  python run_controller.py --config configs/franka_fr3/controllers/col_aware_real_cell.yaml --env_mode real
+Pane 3:  python run_visualizer.py --config configs/visualizer/franka_fr3/collision_real_cell.yaml
+Pane 4:  python scripts/lcm_echo.py franka_arm_joint_meas franka_static_col_info
+
+Keys (pane 2): p pause, q quit
+Viser: tick "Show collision geometry" / "Show collision distances"
+
+
+3. IK QP (TCP follows a keyboard target, avoids the walls)
+-----------------------------------------------------------
+Pane 1:  python run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml
+Pane 2:  python run_controller.py --config configs/franka_fr3/controllers/ik_qp_real_cell.yaml --env_mode real
+Pane 3:  python run_visualizer.py --config configs/visualizer/franka_fr3/ik_qp_real_cell.yaml
+Pane 4:  python scripts/lcm_echo.py franka_arm_joint_meas franka_ik_target_pose
+
+Keys (pane 2, keep it focused):
+  w / s   target +x / -x (forward / back)
+  a / d   target +y / -y (left / right)
+  r / f   target +z / -z (up / down)
+  [ / ]   smaller / larger step (default 1 cm)
+  h       reset to default pose (arm and target)
+  p / q   pause / quit
+Viser: green sphere + crosshair = target, red sphere = TCP, yellow line = TCP -> target
+
+
+Simulation (no robot): replace pane 1 with
+  python run_env.py --config configs/franka_fr3/env/collision.yaml --scene_xml_path assets/scene/franka_fr3/scene_real_cell.xml
+and drop --env_mode real from pane 2.
+(For 1. Gravity compensation use configs/franka_fr3/env/default.yaml instead.)

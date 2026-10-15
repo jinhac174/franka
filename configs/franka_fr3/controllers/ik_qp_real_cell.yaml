@@ -14,7 +14,7 @@ mesh_path:
 num_joints: 7
 num_ctrl_joints: 7
 # Home for key "h": Franka ready pose, gripper open.
-default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
+default_q_values: [0.0, 0.0, 0.0, -1.5707963, 0.0, 1.5707963, 0.0]
 
 # Task-space point: the gripper's tool centre point (between the fingertips).
 task_link: fr3_gripper_tcp

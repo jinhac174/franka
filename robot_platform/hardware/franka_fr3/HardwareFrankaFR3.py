@@ -58,8 +58,8 @@ from robot_platform.hardware.franka_fr3.robotiq import FakeRobotiqTransport, Rob
 N = 7
 FR3_TAU_MAX = np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
 FR3_DQ_MAX = np.array([2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26])
-# Ready pose for move_to_start; joint 7 = 0 (DROID), not Franka's pi/4.
-FR3_HOME_Q = [0.0, -np.pi / 4, 0.0, -3 * np.pi / 4, 0.0, np.pi / 2, 0.0]
+# Default pose for move_to_start: [0, 0, 0, -90°, 0, 90°, 0] (joint 7 = 0, DROID).
+FR3_HOME_Q = [0.0, 0.0, 0.0, -np.pi / 2, 0.0, np.pi / 2, 0.0]
 GRIPPER_MASS = 0.925  # kg: Robotiq 2F-85 + mount (CoM 5.2 cm along flange z)
 # panda-py's set_default_behavior(): contact / reflex thresholds on the
 # estimated EXTERNAL torque (Nm, per joint) and wrench (N x3, Nm x3).
@@ -158,7 +158,7 @@ class FakeBackend:
     def __init__(self, q0=None, gravity_fn=None):
         # Gravity the fake "FR3" compensates itself (the URDF's; none if None).
         self._gravity_fn = gravity_fn
-        self._q = np.array(q0 if q0 is not None else [0, -np.pi / 4, 0, -3 * np.pi / 4, 0, np.pi / 2, 0], dtype=float)
+        self._q = np.array(q0 if q0 is not None else [0, 0, 0, -np.pi / 2, 0, np.pi / 2, 0], dtype=float)
         self._dq = np.zeros(N)
         self._tau = np.zeros(N)
         self._inertia = np.array([0.76, 1.83, 1.22, 1.2, 0.12, 0.13, 0.08])
@@ -271,6 +271,10 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         self._gripper_done_seq = -1
         self._stop_event = threading.Event()
         self._threads = []
+        # Collision geometry of the cell (walls / floor + robot primitives) for
+        # the collision-aware controllers and Viser, like the sim env does.
+        self._scene_cfg = config.get("scene_info", None)
+        self._scene_pub = None
 
     # ------------------------------------------------------------ wiring
     def set_sub_que_dict(self, sub_data_queue_dict):
@@ -326,6 +330,17 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
             th = threading.Thread(target=target, daemon=True)
             th.start()
             self._threads.append(th)
+        if self._scene_cfg:
+            from robot_platform.hardware.franka_fr3.scene_info import SceneInfoPublisher
+
+            sc = self._scene_cfg
+            self._scene_pub = SceneInfoPublisher(
+                sc["scene_xml_path"], sc["static_col_info_channel"],
+                sc["robot_col_info_channel"], sc.get("rate", 10.0),
+            )
+            self._scene_pub.start()
+            print(f"[FR3] Publishing the cell's collision geometry ({sc['scene_xml_path']}): "
+                  f"{self._scene_pub.describe()}")
         self._hardware_ready = True
         print("[FR3] Torque control running. Holding until a controller sends commands. "
               "Keys: q quit, h clear velocity stop, r recover from a robot error.")
@@ -334,6 +349,8 @@ class HardwareFrankaFR3(BaseHardwarePlatform):
         if self._stop_event.is_set():
             return  # already shut down
         self._stop_event.set()
+        if self._scene_pub is not None:
+            self._scene_pub.stop()
         if self._backend is not None:
             try:
                 self._backend.stop_torque()

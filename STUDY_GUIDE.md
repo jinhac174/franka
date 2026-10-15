@@ -81,8 +81,8 @@ pytest -m "not integration"                          # same code, new machine
 pytest tests/integration/test_real_pipeline.py      # fake backend, scene info, bridge
 ```
 Set `robot.hostname` in `configs/franka_fr3/hardware/fr3.yaml`. Describe your
-cell (table, walls) in a scene XML for `run_scene_info.py`; the default
-scene's walls are placeholders.
+cell (table, walls) in a scene XML; `run_hardware.py` publishes it
+(`scene_info:` in `fr3.yaml`).
 
 ### First session (user stop in hand, one step at a time)
 
@@ -92,7 +92,7 @@ scene's walls are placeholders.
 | 2 | `run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml` alone | Arm holds (timeout hold) |
 | 3 | `scripts/launch.sh grav_comp real` | Arm floats under your hand; check the gripper load in Desk (0.925 kg) if it drifts |
 | 4 | `run_controller.py --config configs/franka_fr3/controllers/impedance.yaml --env_mode real --kq_scale 0.3` (with hardware + visualizer) | Springs back to the start pose; then full gains |
-| 5 | `scripts/launch.sh col_aware real` / `ik_qp real` | Needs your cell in `scene_info` |
+| 5 | `scripts/launch.sh col_aware real` / `ik_qp real` | Needs your cell in `fr3.yaml` `scene_info:` |
 | 6 | `min_jerk real`, `ik_reach real` | Planned motions; start with small ones |
 | 7 | `scripts/launch.sh grasp_perception real` | Camera → FoundationPose → bridge → grasp |
 
@@ -101,7 +101,7 @@ scene's walls are placeholders.
 ```
 run_sensors.py (ZED ext1, droid.yaml) ─rgbd─► run_perception.py (foundation_pose_real.yaml) ─fp_obj_pose─►
 run_pose_bridge.py ─franka_object_pose─► run_controller.py (parallel_jaw_grasp / force_aware_grasp --env_mode real)
-run_scene_info.py ─franka_static_col_info / franka_robot_col_info─► controller
+run_hardware.py ─franka_static_col_info / franka_robot_col_info─► controller
 run_hardware.py ◄─joint_ctrl / gripper_cmd─► controller
 ```
 

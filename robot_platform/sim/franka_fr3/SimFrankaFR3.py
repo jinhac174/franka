@@ -94,7 +94,7 @@ def fr3_col_primitives():
 
 
 # Franka's standard "ready" pose (libfranka / franka_ros examples).
-FR3_HOME_Q = [0.0, -np.pi / 4, 0.0, -3 * np.pi / 4, 0.0, np.pi / 2, 0.0]
+FR3_HOME_Q = [0.0, 0.0, 0.0, -np.pi / 2, 0.0, np.pi / 2, 0.0]
 GRIPPER_MAX_WIDTH = rq.MAX_WIDTH
 
 

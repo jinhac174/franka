@@ -11,6 +11,17 @@ franka_fr3:
   urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq.urdf
   mesh_dir: ""
 
+  # Static furniture of the cell, drawn as-is (visual only): the enclosure
+  # from RoPhiTutorial (Rizon4_viser.urdf "enclosure"), at the same place
+  # relative to the robot base.
+  scene_meshes:
+    - name: enclosure
+      path: assets/scene/franka_fr3/meshes/cell/enclosure_decimated.STL
+      scale: 0.001
+      xyz: [-0.293, 0.482, -0.091]
+      rpy: [1.57, 0.0, 0.0]
+      color: [200, 200, 205]
+
   # Collision-info channels for the "Show collision geometry" overlay and the
   # "Show collision distances" dashed lines. Subscribed off the wire so they
   # match EXACTLY what the collision-aware controller receives.
@@ -22,6 +33,8 @@ franka_fr3:
   col_dist_thr: 0.08
   # Draw the virtual walls / floor from the start ("Show walls" checkbox).
   show_walls: true
+  # Nearest-point lines + cm labels from the start ("Show collision distances").
+  show_distances: true
 
   # link <-> obstacle pairs (same set as col_aware_real_cell).
   col_pairs:

@@ -1,4 +1,6 @@
-# Collision geometry for the real robot (run_scene_info.py).
+# Collision geometry for the real robot, stand-alone (run_scene_info.py).
+# Normally run_hardware.py publishes it (fr3.yaml scene_info:); use this only
+# without run_hardware.py, or after removing that block.
 # Describe YOUR cell in this scene: floor, wall_*, table*, obs_* geoms are
 # exported. The default scene's walls are placeholders - measure your cell.
 scene_xml_path: assets/scene/franka_fr3/scene_real_cell.xml

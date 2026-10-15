@@ -16,7 +16,7 @@ viewer_cam:
 
 platform:
   name: franka_fr3
-  default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
+  default_q_values: [0.0, 0.0, 0.0, -1.5707963, 0.0, 1.5707963, 0.0]
   default_gripper_width: 0.085
   # The plant does NOT compensate gravity: the controllers send g(q)
   # (plant_gravity_comp: false), as on the FR3 with gravity_model: controller.

@@ -52,6 +52,10 @@ _ROBOT_COL_COLOR = [80, 140, 255, 110]  # blue-ish
 _WALL_COL_COLOR = [235, 140, 45, 90]  # orange-ish
 
 # Distance-line colors (RGB).
+# Virtual walls / floor: thin glass panes with a frame.
+_GLASS_COLOR = (170, 215, 240)
+_GLASS_OPACITY = 0.22
+_GLASS_EDGE_COLOR = (120, 190, 230)
 _ENV_DIST_COLOR = (255, 40, 40)  # red: robot <-> environment
 _SELF_DIST_COLOR = (255, 150, 40)  # orange: self-collision
 _VEL_ARROW_COLOR = (80, 200, 255)  # cyan: desired tip velocity
@@ -159,6 +163,8 @@ class RobotArmVisualizer:
         self_col_pairs=None,
         col_dist_thr: float = 0.1,
         show_walls: bool = False,
+        show_distances: bool = False,
+        scene_meshes=None,
         target_pose_channel: str = "",
         target_joint_channel: str = "",
         traj_channel: str = "",
@@ -241,6 +247,8 @@ class RobotArmVisualizer:
             load_collision_meshes=False,
         )
 
+        self._setup_scene_meshes(scene_meshes)
+        self._show_distances_init = bool(show_distances)
         self._setup_collision_overlay(robot_col_info_channel, static_col_info_channel, show_walls)
         self._setup_target_pose(target_pose_channel)
         self._setup_p2p_overlays(
@@ -1337,6 +1345,28 @@ class RobotArmVisualizer:
     # ------------------------------------------------------------------
     # Collision overlay (subscribed off the wire)
     # ------------------------------------------------------------------
+    def _setup_scene_meshes(self, scene_meshes):
+        """Static furniture of the cell (e.g. the enclosure), drawn as-is:
+        ``scene_meshes: [{name, path, scale, xyz, rpy, color, opacity}]``.
+        Visual only: the controllers never see it."""
+        self._scene_mesh_handles = []
+        for i, m in enumerate(scene_meshes or []):
+            mesh = trimesh.load(str(m["path"]), force="mesh")
+            mesh.apply_scale(float(m.get("scale", 1.0)))
+            rpy = [float(x) for x in m.get("rpy", [0, 0, 0])]
+            R = trimesh.transformations.euler_matrix(*rpy, axes="sxyz")[:3, :3]
+            handle = self._viser_server.scene.add_mesh_simple(
+                f"/scene/{m.get('name', f'mesh{i}')}",
+                vertices=np.asarray(mesh.vertices, dtype=np.float32),
+                faces=np.asarray(mesh.faces, dtype=np.uint32),
+                color=tuple(int(c) for c in m.get("color", [200, 200, 205])),
+                opacity=m.get("opacity", None),
+                side="double",
+                wxyz=vtf.SO3.from_matrix(R).wxyz,
+                position=tuple(float(x) for x in m.get("xyz", [0, 0, 0])),
+            )
+            self._scene_mesh_handles.append(handle)
+
     def _setup_collision_overlay(self, robot_col_info_channel, static_col_info_channel, show_walls=False):
         import queue as _queue
 
@@ -1386,34 +1416,43 @@ class RobotArmVisualizer:
             if self._show_collision:
                 self._update_robot_col_transforms()
 
-        # Distance lines (batched into two handles).
+        # Distance overlay: thick solid nearest-point lines (red when close ->
+        # yellow at col_dist_thr), dots on both nearest points, a cm label.
         empty = np.zeros((1, 2, 3), dtype=np.float32)
         self._env_dist_handle = self._viser_server.scene.add_line_segments(
             "/collision/distances/env",
             points=empty,
             colors=_ENV_DIST_COLOR,
-            line_width=2.5,
+            line_width=7.0,
             visible=False,
         )
         self._self_dist_handle = self._viser_server.scene.add_line_segments(
             "/collision/distances/self",
             points=empty,
             colors=_SELF_DIST_COLOR,
-            line_width=2.5,
+            line_width=5.0,
             visible=False,
         )
+        self._dist_points_handle = self._viser_server.scene.add_point_cloud(
+            "/collision/distances/points",
+            points=np.zeros((1, 3), dtype=np.float32),
+            colors=np.array([[255, 40, 40]], dtype=np.uint8),
+            point_size=0.022,
+            point_shape="circle",
+            visible=False,
+        )
+        self._dist_labels = {}  # pair -> label handle
 
-        self._show_distances = False
+        self._show_distances = self._show_distances_init
         self._dist_checkbox = self._viser_server.gui.add_checkbox(
-            "Show collision distances", initial_value=False
+            "Show collision distances", initial_value=self._show_distances
         )
 
         @self._dist_checkbox.on_update
         def _(_event):
             self._show_distances = self._dist_checkbox.value
             if not self._show_distances:
-                self._env_dist_handle.visible = False
-                self._self_dist_handle.visible = False
+                self._hide_distances()
             else:
                 self._update_collision_distances()
 
@@ -1443,11 +1482,60 @@ class RobotArmVisualizer:
                 np.asarray(g["offset"]),
             )
 
+    def _add_glass_pane(self, name, g):
+        """A wall / floor box drawn as a thin glass pane on its face toward the
+        robot base (the boxes are thick so signed distances stay right inside
+        them; only that face matters to the arm)."""
+        T = np.asarray(g["offset"])
+        half = np.asarray(g["size"], dtype=float) / 2.0
+        c_local = T[:3, :3].T @ (-T[:3, 3])  # robot base in the box frame
+        out = np.abs(c_local) - half  # how far outside along each axis
+        ax = int(np.argmax(out))
+        sgn = 1.0 if c_local[ax] > 0 else -1.0
+        thick = 0.006
+        dims = 2.0 * half
+        dims[ax] = thick
+        center_local = np.zeros(3)
+        center_local[ax] = sgn * (half[ax] - thick / 2.0)
+        pos = T[:3, :3] @ center_local + T[:3, 3]
+        wxyz = vtf.SO3.from_matrix(T[:3, :3]).wxyz
+        visible = self._show_walls or self._show_collision
+        pane = self._viser_server.scene.add_box(
+            f"/collision/walls/{name}",
+            color=_GLASS_COLOR,
+            dimensions=tuple(dims),
+            opacity=_GLASS_OPACITY,
+            side="double",
+            cast_shadow=False,
+            receive_shadow=False,
+            wxyz=wxyz,
+            position=tuple(pos),
+            visible=visible,
+        )
+        # Frame around the pane, so the glass reads as a wall.
+        a, b = [i for i in range(3) if i != ax]
+        corners = []
+        for sa, sb in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            v = np.zeros(3)
+            v[a], v[b] = sa * half[a], sb * half[b]
+            corners.append(v)
+        segs = np.array([[corners[i], corners[(i + 1) % 4]] for i in range(4)], dtype=np.float32)
+        self._viser_server.scene.add_line_segments(
+            f"/collision/walls/{name}/frame",
+            points=segs,
+            colors=np.array(_GLASS_EDGE_COLOR, dtype=np.uint8),
+            line_width=3.0,
+        )
+        return pane
+
     def _rebuild_wall_nodes(self, dict_col_geoms):
         for _h in self._wall_col_nodes.values():
             _h.remove()
         self._wall_col_nodes = {}
         for name, g in dict_col_geoms.items():
+            if g["type"] == "box" and (name == "floor" or name.startswith("wall")):
+                self._wall_col_nodes[name] = self._add_glass_pane(name, g)
+                continue
             mesh = _primitive_mesh(g["type"], g["size"], _WALL_COL_COLOR)
             T = np.asarray(g["offset"])  # world-frame SE3
             handle = self._viser_server.scene.add_mesh_trimesh(
@@ -1517,7 +1605,8 @@ class RobotArmVisualizer:
 
     @staticmethod
     def _pair_nearest_points(obj_a, obj_b):
-        req = fcl.DistanceRequest(enable_nearest_points=True)
+        # Signed: negative while a link is inside a wall (as the controllers see it).
+        req = fcl.DistanceRequest(enable_nearest_points=True, enable_signed_distance=True)
         res = fcl.DistanceResult()
         fcl.distance(obj_a, obj_b, req, res)
         return float(res.min_distance), res.nearest_points[0], res.nearest_points[1]
@@ -1537,26 +1626,72 @@ class RobotArmVisualizer:
         )
         handle.visible = visible
 
+    def _hide_distances(self):
+        self._env_dist_handle.visible = False
+        self._self_dist_handle.visible = False
+        self._dist_points_handle.visible = False
+        for h in self._dist_labels.values():
+            h.visible = False
+
+    def _dist_color(self, dist):
+        """Red at / below 2 cm (or inside), yellow at col_dist_thr."""
+        t = float(np.clip((dist - 0.02) / max(self._col_dist_thr - 0.02, 1e-6), 0.0, 1.0))
+        return np.array([255, 30 + 200 * t, 30 * (1 - t)], dtype=np.uint8)
+
     def _update_collision_distances(self):
-        """Draw dashed nearest-point lines for pairs under ``col_dist_thr``."""
+        """Nearest-point lines, dots and cm labels for pairs under ``col_dist_thr``."""
         if not self._show_distances:
             return
         if not self._fcl_robot:
-            self._env_dist_handle.visible = False
-            self._self_dist_handle.visible = False
+            self._hide_distances()
             return
 
         robot_objs = self._robot_fcl_objects()
         static_objs = self._static_fcl_objects()
         thr = self._col_dist_thr
 
-        env_segs = []
+        # Robot <-> environment: the closest primitive per (link, obstacle).
+        best = {}
         for a, b in self._col_pairs:
             if a not in robot_objs or b not in static_objs:
                 continue
             dist, p0, p1 = self._pair_nearest_points(robot_objs[a], static_objs[b])
             if dist < thr:
-                env_segs.append(_dashed_segments(p0, p1))
+                key = (col_frame_name(a), b)
+                if key not in best or dist < best[key][0]:
+                    best[key] = (dist, np.asarray(p0), np.asarray(p1))
+        segs, cols, pts, pcols = [], [], [], []
+        shown = set()
+        for key, (dist, p0, p1) in best.items():
+            c = self._dist_color(dist)
+            segs.append([p0, p1])
+            cols.append([c, c])
+            pts += [p0, p1]
+            pcols += [c, c]
+            name = f"{key[0]}|{key[1]}"
+            if name not in self._dist_labels:
+                self._dist_labels[name] = self._viser_server.scene.add_label(
+                    f"/collision/distances/label_{len(self._dist_labels)}",
+                    text="", font_screen_scale=1.3, anchor="bottom-center",
+                )
+            lab = self._dist_labels[name]
+            lab.text = f"{dist * 100:.1f} cm"
+            lab.position = tuple((p0 + p1) / 2.0)
+            lab.visible = True
+            shown.add(name)
+        for name, h in self._dist_labels.items():
+            if name not in shown:
+                h.visible = False
+        if segs:
+            self._env_dist_handle.points = np.asarray(segs, dtype=np.float32)
+            self._env_dist_handle.colors = np.asarray(cols, dtype=np.uint8)
+            self._env_dist_handle.visible = True
+            self._dist_points_handle.points = np.asarray(pts, dtype=np.float32)
+            self._dist_points_handle.colors = np.asarray(pcols, dtype=np.uint8)
+            self._dist_points_handle.visible = True
+        else:
+            self._env_dist_handle.visible = False
+            self._dist_points_handle.visible = False
 
         self_segs = []
         for a, b in self._self_col_pairs:
@@ -1564,11 +1699,7 @@ class RobotArmVisualizer:
                 continue
             dist, p0, p1 = self._pair_nearest_points(robot_objs[a], robot_objs[b])
             if dist < thr:
-                self_segs.append(_dashed_segments(p0, p1))
-
-        self._apply_dashed_handle(
-            self._env_dist_handle, env_segs, _ENV_DIST_COLOR, True
-        )
+                self_segs.append(np.asarray([[p0, p1]], dtype=np.float32))
         self._apply_dashed_handle(
             self._self_dist_handle, self_segs, _SELF_DIST_COLOR, True
         )

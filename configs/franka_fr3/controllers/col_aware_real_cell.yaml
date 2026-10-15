@@ -14,7 +14,7 @@ mesh_path:
 num_joints: 7
 num_arm_joints: 7
 num_ctrl_joints: 7
-default_q_values: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
+default_q_values: [0.0, 0.0, 0.0, -1.5707963, 0.0, 1.5707963, 0.0]
 
 # Gravity: the controller sends g(q) from urdf_path itself. The plant does
 # not compensate it (sim env gravity_comp: false; on the FR3, run_hardware
@@ -43,7 +43,7 @@ joint_velocity_limit: [2, 2, 2, 2, 2.5, 2.5, 2.5]
 # below safty_dist_thr it stops, state="collision").
 safty_dist_thr: 0.02
 # 8 cm activation (d0 = safty_dist_thr + magin_thr): at the default pose the
-# wrist is ~44 cm from the front wall (x = 0.85), so it floats freely there.
+# wrist is ~19 cm from the front wall (x = 0.85), so it floats freely there.
 magin_thr: 0.06
 repulsive_coeff: 8
 

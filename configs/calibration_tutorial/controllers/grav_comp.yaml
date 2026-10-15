@@ -16,7 +16,7 @@ urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
 plant_gravity_comp: false
 
 # Optional seed before the first measurement arrives.
-default_q: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.0]
+default_q: [0.0, 0.0, 0.0, -1.5707963, 0.0, 1.5707963, 0.0]
 
 # Viscous damping on the arm joints only (Nm / (rad/s)).
 arm_damping: 0.5

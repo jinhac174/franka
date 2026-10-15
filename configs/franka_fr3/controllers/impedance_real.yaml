@@ -1,0 +1,73 @@
+# Impedance (tutorial 08) on the real FR3: the gains of impedance.yaml,
+# softened for hand-guiding (as in ~/jwjh/Franka impedance_hw.yaml).
+name: impedance
+ctrl_freq: 1000
+env_mode: real
+
+# Pinocchio model: the 7 arm joints (urdf/fr3_robotiq_rigid.urdf: the Robotiq
+# gripper is a rigid payload). The gripper goes through the gripper API.
+urdf_path: assets/scene/franka_fr3/urdf/fr3_robotiq_rigid.urdf
+mesh_path:
+  path_1: assets/scene/franka_fr3/urdf
+
+num_joints: 7
+num_arm_joints: 7
+num_ctrl_joints: 7
+task_frame: fr3_gripper_tcp
+mode: joint  # start in joint impedance; press `t` for SE(3) task
+
+# Nominal configuration (task nominal = FK(task_frame, default_q)).
+default_q: [0.0, 0.0, 0.0, -1.5707963, 0.0, 1.5707963, 0.0]
+
+# Joint-space impedance: τ = Kq (q_nom − q) − Dq q̇.
+# Critically damped, the RoPhiTutorial recipe: kq_i = dq_i^2 / (4 M_ii), with
+# M_ii = diag of the FR3 + Robotiq mass matrix at default_q (incl. armature):
+# [1.7099, 3.0518, 1.6772, 1.2455, 0.1258, 0.1365, 0.0746].
+# (Not libfranka's example gains [600 x4, 250, 150, 50]: ~10x stiffer.)
+# Real robot: impedance_real.yaml (softer).
+# Real robot: softer than the sim set (that one feels stiff by hand): kq x0.25,
+# dq x0.5, so still critically damped (dq ~ sqrt(kq)).
+dq: [10, 12.5, 7.5, 7.5, 2.5, 2.5, 0.75]
+kq: [14.6, 12.8, 8.4, 11.3, 12.4, 11.5, 1.9]
+kq_scale: 1.0
+dq_scale: 1.0
+
+# SE(3) task impedance at the TCP (body frame, Pinocchio LOCAL):
+#   ξ = log(T^{-1} T_nom)^∨ ∈ ℝ⁶  (ν, ω)
+#   F = K ξ − D V_b,  τ = J_b^⊤ F
+# K = diag(kt_trans I₃, kt_rot I₃), same pattern for D.
+# As in RoPhiTutorial (200 N/m, damping 30); kt_rot raised from its 5 Nm/rad
+# (light Flexiv palm) for the FR3 wrist friction + Robotiq, dt_rot ~
+# 2 sqrt(kt_rot M_77) (critically damped).
+# Real robot: kt x0.4, dt x0.63 (= sqrt(0.4), same damping ratio).
+kt_trans: 80.0
+kt_rot: 8.0
+dt_trans: 19.0
+dt_rot: 1.3
+kt_trans_scale: 1.0
+kt_rot_scale: 1.0
+dt_trans_scale: 1.0
+dt_rot_scale: 1.0
+
+# Gravity: the controller sends g(q) from urdf_path itself. The plant does
+# not compensate it (sim env gravity_comp: false; on the FR3, run_hardware
+# gravity_model: controller cancels the robot's own compensation).
+plant_gravity_comp: false
+status_publish_stride: 20
+
+dict_joints:
+  arm:
+    joint_meas_channel: franka_arm_joint_meas
+    list_joint_idx: [0, 1, 2, 3, 4, 5, 6]
+
+sub_manager:
+  name: franka
+  arm_joint_meas_channel: franka_arm_joint_meas
+  gains_cmd_channel: franka_imp_gains_cmd
+  gains_cmd_type: imp
+
+pub_manager:
+  name: joint_ctrl_imp
+  ctrl_channel: franka_arm_joint_ctrl
+  gripper_cmd_channel: franka_gripper_cmd
+  status_channel: franka_imp_status

@@ -1,6 +1,6 @@
 """The real-robot pipeline, everything except the robot and the GPU:
 
-* run_hardware.py (fake backend) + run_scene_info.py + a collision-aware
+* run_hardware.py (fake backend; it also publishes the cell geometry) + a collision-aware
   controller with --env_mode real (tutorial 15),
 * perception -> grasp bridge: run_pose_bridge.py fed by the perception
   tutorial's ground-truth bounding-box stream (same format as FoundationPose),
@@ -25,9 +25,8 @@ def test_fake_hardware_scene_info_and_real_mode_controller(procs, lcm_listener):
     lst = lcm_listener
     procs.start("hw", HW)
     assert lst.wait_for(lambda: "franka_arm_joint_meas" in lst.last, STARTUP), "hardware did not publish"
-    procs.start("scene", "run_scene_info.py --config configs/franka_fr3/hardware/scene_info.yaml")
     assert lst.wait_for(lambda: "franka_static_col_info" in lst.last
-                        and "franka_robot_col_info" in lst.last, STARTUP), "no scene info"
+                        and "franka_robot_col_info" in lst.last, STARTUP), "no scene info from run_hardware"
     q0 = arm_q(lst)
     assert np.max(np.abs(q0 - HOME_Q)) < 0.02  # fake robot starts at home, holds
 

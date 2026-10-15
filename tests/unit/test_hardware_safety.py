@@ -15,7 +15,7 @@ from data_type.basic_types.JointCtrlData import JointCtrlData
 from robot_platform.hardware.franka_fr3.HardwareFrankaFR3 import FakeBackend, HardwareFrankaFR3
 
 CFG = "configs/franka_fr3/hardware/fr3.yaml"
-Q0 = np.array([0, -np.pi / 4, 0, -3 * np.pi / 4, 0, np.pi / 2, 0])
+Q0 = np.array([0, 0, 0, -np.pi / 2, 0, np.pi / 2, 0])
 
 
 class FrozenBackend(FakeBackend):

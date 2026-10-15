@@ -5,7 +5,7 @@
 #   scripts/launch.sh list
 #
 # sim : run_env.py (MuJoCo) + controller + visualizer
-# real: run_hardware.py (FR3) [+ run_scene_info.py] + controller --env_mode real
+# real: run_hardware.py (FR3; also publishes the cell geometry) + controller --env_mode real
 #       + visualizer [+ camera, FoundationPose, pose bridge for grasping]
 #
 # Keys go to the pane that has focus (Ctrl-b + arrow keys to move). Each
@@ -73,7 +73,6 @@ case "$TARGET" in
       add "$PY run_perception.py --config configs/franka_fr3/perception/foundation_pose_sim.yaml"
     else
       add "$PY run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml"
-      add "$PY run_scene_info.py --config configs/franka_fr3/hardware/scene_info.yaml"
       add "$PY run_sensors.py --config configs/sensors/zed/droid.yaml"
       add "$PY run_perception.py --config configs/franka_fr3/perception/foundation_pose_real.yaml"
     fi
@@ -88,12 +87,14 @@ case "$TARGET" in
     if [[ $MODE == sim ]]; then
       add "$PY run_env.py --config $env $ENV_EXTRA"
     elif [[ $MODE == real ]]; then
-      # run_scene_info.py publishes the real cell (scene_real_cell.xml: floor,
+      # run_hardware.py publishes the real cell (scene_real_cell.xml: floor,
       # wall_front, wall_left); controllers must name those obstacles.
       case $TARGET in
         col_aware|collision)
           [[ $ctrl != - ]] && ctrl=$C/col_aware_real_cell.yaml
           vis=$V/collision_real_cell.yaml ;;
+        impedance)
+          ctrl=$C/impedance_real.yaml ;;
         ik_qp)
           ctrl=$C/ik_qp_real_cell.yaml
           vis=$V/ik_qp_real_cell.yaml ;;
@@ -102,7 +103,6 @@ case "$TARGET" in
           exit 1 ;;
       esac
       add "$PY run_hardware.py --config configs/franka_fr3/hardware/fr3.yaml"
-      [[ $scene == 1 ]] && add "$PY run_scene_info.py --config configs/franka_fr3/hardware/scene_info.yaml"
       if [[ $TARGET == grasp || $TARGET == force_grasp ]]; then
         echo "On the robot the object pose must come from perception:" >&2
         echo "  scripts/launch.sh ${TARGET}_perception real" >&2
